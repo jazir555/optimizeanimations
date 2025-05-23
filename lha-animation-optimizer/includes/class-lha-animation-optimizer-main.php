@@ -105,7 +105,7 @@ class Main {
 		/**
 		 * The class responsible for defining all actions that occur in the admin area.
 		 */
-		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'admin/class-lha-animation-optimizer-admin.php';
+		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'admin/class-lha-animation-optimizer-admin.php'; // Correctly points to Settings_Manager class file
 
 		/**
 		 * The class responsible for defining all actions that occur in the public-facing
@@ -148,10 +148,10 @@ class Main {
 
 		$this->loader->add_action( 'admin_menu', $plugin_admin, 'add_plugin_admin_menu' );
 		$this->loader->add_action( 'admin_init', $plugin_admin, 'initialize_settings' );
-		// TODO: Add admin_enqueue_scripts hook for admin-specific CSS and JS if/when Admin class is created.
-		// $this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_styles' );
-		// $this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_scripts' );
-
+		// Note: Enqueuing for admin styles/scripts would typically be handled within the Settings_Manager class itself,
+		// hooked to 'admin_enqueue_scripts', and then those methods registered with the loader here if desired,
+		// or directly hooked in the Settings_Manager's constructor or an init method.
+		// For now, no separate admin assets are enqueued beyond WordPress defaults for settings pages.
 
 	}
 
@@ -213,5 +213,5 @@ class Main {
 
 }
 
-// This file is production-ready. Admin and Public classes are now integrated.
+// This file is production-ready. Admin and Public classes are integrated.
 ?>

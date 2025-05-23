@@ -29,6 +29,19 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+// Define plugin version constant
+if ( ! function_exists( 'get_plugin_data' ) ) {
+	require_once ABSPATH . 'wp-admin/includes/plugin.php';
+}
+$lha_plugin_data = get_plugin_data( __FILE__ );
+if ( isset( $lha_plugin_data['Version'] ) ) {
+	define( 'LHA_ANIMATION_OPTIMIZER_VERSION', $lha_plugin_data['Version'] );
+} else {
+	// Fallback version if get_plugin_data fails or Version is not set
+	define( 'LHA_ANIMATION_OPTIMIZER_VERSION', '1.0.0' );
+}
+
+
 /**
  * The core plugin class that is used to define internationalization,
  * admin-specific hooks, and public-facing site hooks.

@@ -27,11 +27,17 @@ class Deactivator {
 	 * @since    1.0.0
 	 */
 	public static function deactivate() {
-		// TODO: Add deactivation logic here.
-		// Example: Clear scheduled cron jobs, remove temporary data.
+		// This is the place for deactivation tasks like:
+		// - Clearing any scheduled cron jobs specific to this plugin.
+		// - Removing temporary transients that are safe to remove on deactivation.
+		// - Other cleanup tasks that should happen when the plugin is disabled,
+		//   but not necessarily when it's uninstalled (data is usually kept on deactivation).
 
-		// This class is production-ready for its current scope.
-		// Actual deactivation logic needs to be implemented based on plugin features.
+		// For LHA Animation Optimizer v1.0.0, there are no specific deactivation
+		// tasks required beyond what WordPress handles by default (e.g., not running plugin code).
+		// Plugin options are intentionally not deleted here; that is handled by uninstall.php.
+
+		// This class is production-ready.
 	}
 
 }
