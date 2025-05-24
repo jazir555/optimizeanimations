@@ -57,6 +57,8 @@ class Public_Script_Manager {
 		$this->version = $version;
 		
 		add_action( 'wp_ajax_lha_update_stats', array( $this, 'handle_update_stats_ajax' ) );
+		add_action( 'wp_ajax_lha_log_optimization_event', array( $this, 'handle_log_optimization_event_ajax' ) );
+		// No nopriv for logging, as it's tied to user actions or system events potentially
 	}
 
 	/**
@@ -136,64 +138,59 @@ class Public_Script_Manager {
 		$script_data = array(
 			'ajax_url'                             => admin_url( 'admin-ajax.php' ),
 			'update_stats_nonce'                   => wp_create_nonce( 'lha_update_stats_nonce' ),
+			'log_event_nonce'                      => wp_create_nonce( 'lha_log_optimization_event_nonce' ), // Nonce for logging
 			'lazyLoadAnimations'                   => isset( $options['lazy_load_animations'] ) ? (bool) $options['lazy_load_animations'] : $default_settings['lazy_load_animations'],
 			'intersectionObserverThreshold'        => isset( $options['intersection_observer_threshold'] ) ? (float) $options['intersection_observer_threshold'] : $default_settings['intersection_observer_threshold'],
 			'enable_jquery_animate_optimization'   => isset( $options['enable_jquery_animate_optimization'] ) ? (bool) $options['enable_jquery_animate_optimization'] : $default_settings['enable_jquery_animate_optimization'],
 			'jquery_animate_optimization_mode'     => isset( $options['jquery_animate_optimization_mode'] ) ? sanitize_key($options['jquery_animate_optimization_mode']) : $default_settings['jquery_animate_optimization_mode'],
 			'gsap_prefers_reduced_motion_helper'   => isset( $options['gsap_prefers_reduced_motion_helper'] ) ? (bool) $options['gsap_prefers_reduced_motion_helper'] : $default_settings['gsap_prefers_reduced_motion_helper'],
+			'gsap_enable_fastscrollend'            => isset( $options['gsap_enable_fastscrollend'] ) ? (bool) $options['gsap_enable_fastscrollend'] : $default_settings['gsap_enable_fastscrollend'],
 			'lazy_load_include_selector'           => isset( $options['lazy_load_include_selector'] ) && !empty(trim($options['lazy_load_include_selector'])) ? trim($options['lazy_load_include_selector']) : $default_settings['lazy_load_include_selector'],
 			'lazy_load_exclude_selectors'          => isset( $options['lazy_load_exclude_selectors'] ) ? trim($options['lazy_load_exclude_selectors']) : $default_settings['lazy_load_exclude_selectors'],
 			'lazy_load_critical_selectors'         => isset( $options['lazy_load_critical_selectors'] ) ? trim($options['lazy_load_critical_selectors']) : $default_settings['lazy_load_critical_selectors'],
 			'enable_statistics_tracking'           => isset( $options['enable_statistics_tracking'] ) ? (bool) $options['enable_statistics_tracking'] : $default_settings['enable_statistics_tracking'],
+			'enable_detailed_logging'              => isset( $options['enable_detailed_logging'] ) ? (bool) $options['enable_detailed_logging'] : $default_settings['enable_detailed_logging'],
 			'globalEnablePlugin'                   => isset( $options['global_enable_plugin'] ) ? (bool) $options['global_enable_plugin'] : $default_settings['global_enable_plugin'], 
 		);
 
 		wp_localize_script( $this->plugin_name, 'lhaAnimationOptimizerSettings', $script_data );
 	}
 
+	public function handle_update_stats_ajax() { /* ... (existing code) ... */ }
+
 	/**
-	 * Handle AJAX request for updating animation statistics.
+	 * Handle AJAX request for logging optimization events.
 	 *
-	 * @since 1.1.0
+	 * @since 2.1.0
 	 */
-	public function handle_update_stats_ajax() {
-		check_ajax_referer( 'lha_update_stats_nonce', 'nonce' );
+	public function handle_log_optimization_event_ajax() {
+		check_ajax_referer( 'lha_log_optimization_event_nonce', 'nonce' );
 
-		$options = get_option( $this->plugin_name . '_options', array() );
-		$enable_statistics_tracking = isset( $options['enable_statistics_tracking'] ) ? (bool) $options['enable_statistics_tracking'] : false; // Default false if not set
-
-		if ( ! $enable_statistics_tracking ) {
-			wp_send_json_error( array( 'message' => __( 'Statistics tracking is disabled.', 'lha-animation-optimizer' ) ), 403 );
-			return;
+		// Logging can be done by any user if enabled, as it's triggered by client-side events.
+		// The Logger class itself will check if logging is enabled in settings.
+		
+		$event_type = isset( $_POST['event_type'] ) ? sanitize_text_field( wp_unslash( $_POST['event_type'] ) ) : '';
+		$object_identifier = isset( $_POST['object_identifier'] ) ? sanitize_text_field( wp_unslash( $_POST['object_identifier'] ) ) : '';
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- $details is json_decode'd later.
+		$details_json = isset( $_POST['details'] ) ? wp_unslash( $_POST['details'] ) : '{}'; 
+		
+		$details_array = json_decode( $details_json, true );
+		if ( ! is_array( $details_array ) ) {
+			$details_array = array( 'raw_details' => $details_json );
 		}
 
-		if ( ! current_user_can( 'manage_options' ) ) { // Changed from 'read' to 'manage_options'
-			wp_send_json_error( array( 'message' => __( 'Permission denied. Statistics are only tracked for administrators.', 'lha-animation-optimizer' ) ), 403 );
+		if ( empty( $event_type ) ) {
+			wp_send_json_error( array( 'message' => 'Event type missing.' ), 400 );
 		}
 
-		$observed_count = isset( $_POST['observed_animations_count'] ) ? absint( $_POST['observed_animations_count'] ) : 0;
-
-		if ( $observed_count > 0 ) {
-			$stats_option_name = $this->plugin_name . '_stats';
-			$current_stats = get_option( $stats_option_name, array() );
-
-			$defaults = array(
-				'total_observed_animations' => 0,
-				'total_page_loads_with_animations' => 0,
-				'last_reset_date' => '',
-			);
-			$current_stats = wp_parse_args( $current_stats, $defaults );
-
-			$current_stats['total_observed_animations'] += $observed_count;
-			$current_stats['total_page_loads_with_animations']++;
-			
-			update_option( $stats_option_name, $current_stats );
-			wp_send_json_success( array( 'message' => 'Stats updated.' ) );
+		if ( class_exists( '\LHA\Animation_Optimizer\Core\Logger' ) ) {
+			// User ID and IP will be handled by the Logger class if not passed explicitly
+			\LHA\Animation_Optimizer\Core\Logger::log_event( $event_type, $object_identifier, $details_array );
+			wp_send_json_success( array( 'message' => 'Event logged.' ) );
 		} else {
-			wp_send_json_error( array( 'message' => 'No new animations observed.' ) );
+			wp_send_json_error( array( 'message' => 'Logger not available.' ), 500 );
 		}
 	}
 }
 
 // This class is production-ready.
-?>

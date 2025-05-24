@@ -63,7 +63,8 @@ class Main {
 	public function __construct() {
 
 		$this->plugin_name = 'lha-animation-optimizer';
-		$this->version = '1.0.0'; // This should ideally be defined in one place, e.g. main plugin file.
+		// Use the defined constant for version consistency.
+		$this->version = defined( 'LHA_ANIMATION_OPTIMIZER_VERSION' ) ? LHA_ANIMATION_OPTIMIZER_VERSION : '2.1.0'; // Fallback just in case
 
 		$this->load_dependencies();
 		$this->set_locale();
@@ -105,7 +106,7 @@ class Main {
 		/**
 		 * The class responsible for defining all actions that occur in the admin area.
 		 */
-		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'admin/class-lha-animation-optimizer-admin.php'; // Correctly points to Settings_Manager class file
+		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'admin/class-lha-animation-optimizer-admin.php';
 
 		/**
 		 * The class responsible for defining all actions that occur in the public-facing
@@ -129,7 +130,7 @@ class Main {
 	private function set_locale() {
 
 		$plugin_i18n = new \LHA\Animation_Optimizer\Core\I18n();
-		$plugin_i18n->set_text_domain( $this->get_plugin_name() ); // Pass the text domain
+		$plugin_i18n->set_text_domain( $this->get_plugin_name() ); 
 
 		$this->loader->add_action( 'plugins_loaded', $plugin_i18n, 'load_plugin_textdomain' );
 
@@ -148,11 +149,7 @@ class Main {
 
 		$this->loader->add_action( 'admin_menu', $plugin_admin, 'add_plugin_admin_menu' );
 		$this->loader->add_action( 'admin_init', $plugin_admin, 'initialize_settings' );
-		// Note: Enqueuing for admin styles/scripts would typically be handled within the Settings_Manager class itself,
-		// hooked to 'admin_enqueue_scripts', and then those methods registered with the loader here if desired,
-		// or directly hooked in the Settings_Manager's constructor or an init method.
-		// For now, no separate admin assets are enqueued beyond WordPress defaults for settings pages.
-
+		// Admin styles and scripts are enqueued within Settings_Manager::add_plugin_admin_menu using the $hook_suffix.
 	}
 
 	/**

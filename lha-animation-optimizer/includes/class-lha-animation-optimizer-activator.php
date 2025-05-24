@@ -3,7 +3,7 @@
  * Fired during plugin activation.
  *
  * This class defines all code necessary to run during the plugin's activation,
- * including setting default options and updating the plugin version.
+ * including setting default options, updating the plugin version, and creating custom tables.
  *
  * @since      1.0.0
  * @package    LHA_Animation_Optimizer
@@ -23,8 +23,9 @@ class Activator {
 	/**
 	 * Sets up the initial plugin state upon activation.
 	 *
-	 * Stores the plugin version and sets default options if they don't exist yet,
-	 * or merges new default options into existing settings on upgrade.
+	 * Stores the plugin version, sets default options if they don't exist yet
+	 * (or merges new default options into existing settings on upgrade),
+	 * and creates custom database tables.
 	 *
 	 * @since    1.0.0
 	 */
@@ -59,6 +60,9 @@ class Activator {
 			) );
 		}
 
+		// Create custom database tables
+		self::create_log_table();
+
 		// This class is production-ready.
 	}
 
@@ -70,20 +74,52 @@ class Activator {
 	 */
 	public static function get_default_options() {
 		return array(
-			'global_enable_plugin'               => 1, // true
-			'lazy_load_animations'               => 1, // true
+			'global_enable_plugin'               => 1, 
+			'lazy_load_animations'               => 1, 
 			'lazy_load_include_selector'         => '.lha-animation-target',
 			'lazy_load_exclude_selectors'        => '',
 			'lazy_load_critical_selectors'       => '',
 			'intersection_observer_threshold'    => 0.1,
-			'enable_jquery_animate_optimization' => 0, // false
+			'enable_jquery_animate_optimization' => 0, 
 			'jquery_animate_optimization_mode'   => 'safe',
-			'gsap_prefers_reduced_motion_helper' => 0, // false
+			'gsap_prefers_reduced_motion_helper' => 0, 
+			'gsap_enable_fastscrollend'          => 0,
 			'optimization_scope'                 => 'global',
 			'target_post_types'                  => array(),
 			'target_page_ids'                    => '',
 			'exclude_page_ids'                   => '',
+			'enable_statistics_tracking'         => 0,
+			'enable_detailed_logging'            => 0, // New default for logging
 		);
+	}
+
+	/**
+	 * Create the custom log table.
+	 *
+	 * @since 2.1.0
+	 */
+	private static function create_log_table() {
+		global $wpdb;
+		$table_name = $wpdb->prefix . 'lha_optimization_logs';
+		$charset_collate = $wpdb->get_charset_collate();
+
+		$sql = "CREATE TABLE $table_name (
+			log_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			log_timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			event_type VARCHAR(100) NOT NULL,
+			object_identifier VARCHAR(255) DEFAULT '' NOT NULL,
+			details TEXT DEFAULT '' NOT NULL,
+			user_id BIGINT UNSIGNED DEFAULT 0 NOT NULL,
+			ip_address VARCHAR(100) DEFAULT '' NOT NULL,
+			PRIMARY KEY  (log_id),
+			KEY event_type (event_type),
+			KEY log_timestamp (log_timestamp)
+		) $charset_collate;";
+
+		if ( ! function_exists( 'dbDelta' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+		}
+		dbDelta( $sql );
 	}
 
 }

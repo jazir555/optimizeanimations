@@ -14,12 +14,12 @@
  * @wordpress-plugin
  * Plugin Name:       LHA Animation Optimizer
  * Plugin URI:        https://example.com/lha-animation-optimizer-plugin-uri
- * Description:       Optimizes animations for speed and performance.
- * Version:           1.0.0
+ * Description:       Optimize your website's animations for better performance and user experience. Features lazy loading for CSS animations, experimental jQuery and GSAP optimizations, a CSS Animation Analyzer, and granular control over where and how optimizations are applied.
+ * Version:           2.1.0
  * Author:            LHA Plugin Author
  * Author URI:        https://example.com/lha-author-uri
- * License:           GPL-2.0+
- * License URI:       http://www.gnu.org/licenses/gpl-2.0.txt
+ * License:           GPLv2 or later
+ * License URI:       https://www.gnu.org/licenses/gpl-2.0.txt
  * Text Domain:       lha-animation-optimizer
  * Domain Path:       /languages
  */
@@ -38,7 +38,7 @@ if ( isset( $lha_plugin_data['Version'] ) ) {
 	define( 'LHA_ANIMATION_OPTIMIZER_VERSION', $lha_plugin_data['Version'] );
 } else {
 	// Fallback version if get_plugin_data fails or Version is not set
-	define( 'LHA_ANIMATION_OPTIMIZER_VERSION', '1.0.0' );
+	define( 'LHA_ANIMATION_OPTIMIZER_VERSION', '2.1.0' ); // Updated fallback
 }
 
 
@@ -85,3 +85,6 @@ function lha_animation_optimizer_deactivate() {
 
 register_activation_hook( __FILE__, 'lha_animation_optimizer_activate' );
 register_deactivation_hook( __FILE__, 'lha_animation_optimizer_deactivate' );
+
+// This file is production-ready.
+?>

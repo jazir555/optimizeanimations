@@ -4,8 +4,8 @@
 	/**
 	 * LHA Animation Optimizer Admin Script
 	 *
-	 * Handles admin-specific JavaScript, including the CSS Analyzer tool
-	 * and conditional visibility for targeting rules.
+	 * Handles admin-specific JavaScript, including the CSS Analyzer tool,
+	 * conditional visibility for targeting rules, and displaying analysis suggestions.
 	 */
 	$(function() {
 
@@ -32,8 +32,10 @@
 					if (response.data.results && response.data.results.length > 0) {
 						resultsHtml += '<h4>Analysis Details:</h4>';
 						resultsHtml += '<ul class="lha-analysis-results-list">';
-						response.data.results.forEach(function(item) {
+						response.data.results.forEach(function(item, index) {
 							let itemClass = 'lha-analysis-item';
+							let itemTypeDisplay = item.type ? esc_html(item.type.toUpperCase()) : 'INFO';
+
 							if (item.type === 'warning') {
 								itemClass += ' lha-analysis-item-warning';
 							} else if (item.type === 'info') {
@@ -43,15 +45,34 @@
 							}
 
 							resultsHtml += '<li class="' + itemClass + '">';
-							resultsHtml += '<strong>' + esc_html(item.type.toUpperCase()) + ':</strong> ' + esc_html(item.message);
+							resultsHtml += '<strong>' + itemTypeDisplay + ':</strong> ' + esc_html(item.message);
 							if (item.selector) {
 								resultsHtml += '<br><em>Selector:</em> <code>' + esc_html(item.selector) + '</code>';
+							}
+							if (item.animation_name) {
+								resultsHtml += '<br><em>Animation Name:</em> <code>' + esc_html(item.animation_name) + '</code>';
+							}
+							if (item.keyframe_step) {
+								resultsHtml += '<br><em>Keyframe:</em> <code>' + esc_html(item.keyframe_step) + '</code>';
 							}
 							if (item.property) {
 								resultsHtml += '<br><em>Property:</em> <code>' + esc_html(item.property) + '</code>';
 							}
 							if (item.value) {
 								resultsHtml += '<br><em>Value:</em> <code>' + esc_html(item.value) + '</code>';
+							}
+
+							// Display Suggestion if available
+							if (item.suggestion) {
+								resultsHtml += '<div class="lha-analysis-suggestion">';
+								resultsHtml += '<strong>Suggestion:</strong> ';
+								if (item.suggestion.type === 'transform_position' && item.suggestion.original_property && item.suggestion.suggested_property && item.suggestion.example_value) {
+									resultsHtml += 'For property <code>' + esc_html(item.suggestion.original_property) + '</code>, consider using <code>' + esc_html(item.suggestion.suggested_property) + '</code>. Example: <code>' + esc_html(item.suggestion.example_value) + '</code>.';
+								}
+								if (item.suggestion.comment) {
+									resultsHtml += ' <span class="lha-suggestion-comment"><em>' + esc_html(item.suggestion.comment) + '</em></span>';
+								}
+								resultsHtml += '</div>';
 							}
 							resultsHtml += '</li>';
 						});
@@ -79,27 +100,19 @@
 			});
 		});
 
-		// Basic HTML escaping function for client-side display
 		function esc_html(unsafe) {
 			if (typeof unsafe !== 'string') {
-				if (typeof unsafe === 'number' || typeof unsafe === 'boolean') {
-					return String(unsafe);
-				}
+				if (typeof unsafe === 'number' || typeof unsafe === 'boolean') { return String(unsafe); }
 				return ''; 
 			}
-			return unsafe
-				.replace(/&/g, "&amp;")
-				.replace(/</g, "&lt;")
-				.replace(/>/g, "&gt;")
-				.replace(/"/g, "&quot;")
-				.replace(/'/g, "&#039;");
+			return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 		}
 		
-		// Helper for WordPress internationalization (if needed for dynamic strings)
-		// const { __ } = wp.i18n;
+		function esc_html__(text, domain) { // Basic i18n placeholder for JS
+        	return esc_html(text); // In a real WP env, this would use wp.i18n.__
+    	}
 
 
-		// Tab persistence and active class handling
         const urlParams = new URLSearchParams(window.location.search);
         const currentTab = urlParams.get('tab');
         if (currentTab) {
@@ -109,12 +122,9 @@
 			 $('.nav-tab-wrapper a.nav-tab[href*="tab=general"]').addClass('nav-tab-active');
 		}
 
-		// Targeting Rules: Conditional field visibility
 		const optimizationScopeRadios = $('input[type="radio"][name="lha_animation_optimizer_options[optimization_scope]"]');
 		const conditionalFields = $('#target_post_types').closest('tr').add( $('#target_page_ids').closest('tr') );
-		// Using the class ".lha-targeting-conditional" added to the fieldset and p.description for post types
 		const conditionalPostTypesElements = $('.lha-targeting-conditional');
-
 
 		function toggleConditionalTargetingFields() {
 			if ($('input[type="radio"][name="lha_animation_optimizer_options[optimization_scope]"]:checked').val() === 'conditional') {
@@ -125,11 +135,7 @@
 				conditionalPostTypesElements.hide();
 			}
 		}
-
-		// Initial state
 		toggleConditionalTargetingFields();
-
-		// Toggle on change
 		optimizationScopeRadios.on('change', function() {
 			toggleConditionalTargetingFields();
 		});
