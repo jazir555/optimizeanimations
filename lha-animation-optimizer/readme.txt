@@ -1,79 +1,116 @@
 === LHA Animation Optimizer ===
-Contributors: Jules
-Tags: animation, performance, optimize, lazy load, speed, optimize animations, improve animation performance
+Contributors: LHA Plugin Author
+Tags: animation, performance, optimization, jquery, gsap, lazy load
 Requires at least: 5.0
-Tested up to: 6.8.1
-Stable tag: 1.0.0
+Tested up to: 6.4
+Stable tag: 1.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Optimize animations for speed and performance by lazy-loading them as they enter the viewport.
+Optimizes web animations for speed and performance by lazy loading animations and caching detected JavaScript-based animations.
 
 == Description ==
 
-LHA Animation Optimizer enhances your website's performance by optimizing when animations are loaded and triggered. The primary feature in this version is the lazy loading of animations. Instead of all animations loading and potentially running as soon as the page loads (which can slow down initial page rendering and affect Core Web Vitals), this plugin allows animations to be deferred until the element they are attached to scrolls into the user's viewport.
+LHA Animation Optimizer enhances your website's performance by controlling how and when animations are loaded and played. It offers two main features:
 
-This is achieved by using the efficient IntersectionObserver API. You can control which elements are targeted for lazy loading by adding a specific CSS class. The plugin provides a settings page in the WordPress admin area where you can enable/disable the lazy loading feature and configure the visibility threshold for triggering the animations.
+1.  **Lazy Loading of Animations:** Animations (CSS or JavaScript-driven) associated with elements having the `.lha-animation-target` class will only play when the element scrolls into the viewport. This prevents a flood of animations from playing simultaneously on page load, improving perceived performance and reducing initial processing.
+2.  **Automatic Animation Caching (New in 1.1.0):** The plugin automatically detects animations created by jQuery (`.animate()`) and GSAP (GreenSock Animation Platform) during a user's first visit (when the cache is not yet built). These detected animation details (like selectors, properties, and durations) are then stored in a cache. On subsequent page views, the heavier detection scripts are not loaded. Instead, a lightweight player script uses the cached data to re-initialize and play these animations when they become visible, further reducing JavaScript execution time and improving load speed.
 
-Future versions may include more advanced techniques for direct CSS and JavaScript animation optimization.
+The plugin provides settings to enable/disable lazy loading and configure the visibility threshold for triggering animations. It also includes a manual cache clearing option.
+
+== Features ==
+
+*   **Lazy Loading:** Animations only play when elements enter the viewport using IntersectionObserver.
+*   **Configurable Threshold:** Set what percentage of an element must be visible to trigger its animation.
+*   **Automatic Animation Caching (New in 1.1.0):**
+    *   Detects animations created by jQuery (`.animate()`) and common GSAP timelines on the initial page view.
+    *   Caches these detected animation details (selectors, properties, duration).
+    *   On subsequent views, loads a lightweight animation player instead of the full detection scripts if a valid cache exists.
+    *   The animation cache is automatically cleared when plugin settings are saved or can be manually cleared via a button in the admin settings.
+*   **Admin Settings Page:** Easy-to-use interface to configure plugin behavior.
+*   **Manual Cache Control (New in 1.1.0):** A "Clear Animation Cache" button in the admin settings allows for manually forcing a rebuild of the animation cache.
 
 == Installation ==
 
-1.  Upload the `lha-animation-optimizer` folder to the `/wp-content/plugins/` directory on your WordPress installation.
+1.  Upload the `lha-animation-optimizer` folder to the `/wp-content/plugins/` directory.
 2.  Activate the plugin through the 'Plugins' menu in WordPress.
-3.  Navigate to the "Animation Optimizer" settings page in your WordPress admin menu.
-4.  Ensure "Enable Lazy Loading of Animations" is checked (this is the default).
-5.  Adjust the "Lazy Load Trigger Threshold" if needed. This value (between 0.0 and 1.0) determines what percentage of an element must be visible before its animation is triggered. For example, 0.1 means 10% visible, 0.5 means 50% visible.
-6.  For elements on your site that you wish to lazy-load:
-    *   Add the CSS class `lha-animation-target` to the HTML element.
-    *   Ensure your theme or custom CSS is set up so that the animation for this element is triggered when the class `lha-animate-now` is added to it. For example, if your element initially has `opacity: 0; transform: translateY(20px);`, your animation CSS might look like:
-        `.lha-animation-target.lha-animate-now {
-            opacity: 1;
-            transform: translateY(0);
-            transition: opacity 0.5s ease-out, transform 0.5s ease-out;
-        }`
+3.  Go to "Animation Optimizer" in the WordPress admin menu to configure the settings.
+
+== How to Use ==
+
+1.  **For Lazy Loading (CSS or other JS animations):**
+    *   Ensure the "Enable Lazy Loading of Animations" setting is checked (default).
+    *   Add the class `lha-animation-target` to any HTML element you want to lazy load.
+    *   When the element scrolls into view, the plugin will add the class `lha-animate-now` (or the class configured in `lhaSettings.animationTriggerClass` if customized by a filter - currently hardcoded in JS but planned for settings). Your CSS should use this class to trigger the animation (e.g., `.lha-animation-target.lha-animate-now { animation-name: my-animation; }`).
+
+2.  **For Automatic Animation Caching (jQuery & GSAP):**
+    *   This feature is automatic. If jQuery or GSAP animations are used on your site, the plugin's detector script (`lha-animation-detector.js`) will attempt to capture their details on the first visit (when no valid cache exists).
+    *   On subsequent visits, if a cache was successfully built, `lha-animation-detector.js` will not be loaded. Instead, `lha-animation-optimizer-public.js` will use the cached data to replay the animations.
+    *   No special classes are needed for jQuery/GSAP animation *detection*, but the elements animated by them will be effectively treated as `lha-animation-target`s by the player script.
 
 == Frequently Asked Questions ==
 
-= How do I use the lazy loading feature? =
+= How does lazy loading work? =
 
-1.  Make sure the plugin is activated and "Enable Lazy Loading of Animations" is checked in the "Animation Optimizer" settings page.
-2.  For any HTML element you want to animate as it scrolls into view, add the CSS class `lha-animation-target` to that element.
-3.  Your theme's or plugin's CSS should define the actual animation. The animation should be set up to start when the class `lha-animate-now` is added to an element that already has `lha-animation-target`. The plugin will add the `lha-animate-now` class when the element becomes visible.
+The plugin uses the IntersectionObserver API to monitor elements with the `lha-animation-target` class. When an element enters the viewport (based on the configured threshold), the plugin adds a CSS class (default: `lha-animate-now`) to that element, which your CSS can then use to trigger the animation.
 
-= What types of animations does this optimize? =
+= How does Automatic Animation Caching work? =
 
-Currently, this plugin focuses on lazy loading animations. This means it controls *when* an animation (CSS or JavaScript-triggered by class addition) starts, based on viewport visibility. It doesn't alter the animation code itself. Future versions may explore more direct optimization techniques for CSS keyframes or JavaScript animation patterns.
+On a user's first visit (or after the cache has been cleared), a special JavaScript file (`lha-animation-detector.js`) is loaded. This script attempts to identify animations being created by popular JavaScript libraries like jQuery (specifically `.animate()` calls) and GSAP. It records information about these animations, such as which elements they apply to, what properties are being animated, and for how long. This information is then sent back to your WordPress server and stored as a "cache."
 
-= Is it compatible with my theme? =
+On subsequent page views, the plugin checks if this cache exists and is valid. If it is, the heavier `lha-animation-detector.js` is not loaded. Instead, the main public script (`lha-animation-optimizer-public.js`) reads the cached animation data and re-applies those animations to the correct elements when they become visible in the viewport. This means your site doesn't have to spend resources re-detecting the same animations on every page load.
 
-Generally, yes. The plugin uses standard WordPress features for its settings and relies on you adding CSS classes to your elements. The key is that your theme's or custom CSS animations must be designed to be triggered by the addition of a CSS class (specifically, `lha-animate-now` being added to your `lha-animation-target` elements). If your animations are purely time-based or triggered by other JavaScript events not related to class changes, this plugin won't directly affect them in its current version.
+= How do I use the "Clear Animation Cache" button? =
+
+In the WordPress admin area, navigate to "Animation Optimizer" from the main menu. On this settings page, you will find a button labeled "Clear Animation Cache Now". Clicking this button will delete the stored animation data. This is useful if:
+*   You've made significant changes to your site's JavaScript animations and want the plugin to re-detect them.
+*   You are troubleshooting an issue and want to ensure the animations are being freshly detected.
+The cache will also be cleared automatically whenever you save the Animation Optimizer settings.
+
+= What if my jQuery/GSAP animation is very complex or uses callbacks? =
+
+The current detection mechanism for jQuery and GSAP animations focuses on common use cases and serializable properties. Complex aspects like function-based values, callbacks within animations (e.g., `complete` functions), or advanced GSAP features like ScrollTrigger might not be fully captured or replicated by the caching system. In such cases, those specific animations might not behave identically when played from the cache. The underlying elements will still be lazy-loaded.
+
+= What if no animations are detected or played? =
+
+*   Ensure elements meant for lazy loading have the `lha-animation-target` class.
+*   For jQuery/GSAP, ensure they are firing on page load or reasonably early for detection.
+*   Check your browser's developer console for any error messages from "LHA Detector" or "LHA Player".
+*   Try clearing the animation cache.
+*   Ensure your theme and other plugins are not causing JavaScript errors that might interfere with this plugin.
 
 == Screenshots ==
 
-1.  The LHA Animation Optimizer settings page in the WordPress admin area, showing options for enabling lazy loading and setting the IntersectionObserver threshold. (Actual screenshot to be added if plugin were submitted to repository)
+1.  The LHA Animation Optimizer settings page in the WordPress admin area.
 
 == Changelog ==
 
+= 1.1.0 (Current Version) =
+*   **NEW:** Implemented Automatic Animation Caching for jQuery (`.animate()`) and GSAP animations.
+    *   Detector script (`lha-animation-detector.js`) now identifies and sends jQuery/GSAP animation data to the server for caching.
+    *   Public script (`lha-animation-optimizer-public.js`) now acts as a player, re-initializing cached animations when the detector script is not loaded.
+    *   Conditional loading: Detector script only loads if the animation cache is invalid or empty.
+*   **NEW:** Added "Clear Animation Cache" button to the admin settings page.
+*   **ENHANCEMENT:** Animation cache version is now updated when plugin settings are saved, effectively clearing the old animation cache.
+*   **ENHANCEMENT:** Improved sanitization for detected animation data.
+*   **ENHANCEMENT:** Refined selector generation in the detector script.
+*   **REFACTOR:** Consolidated public script enqueuing and localization logic in `Public_Script_Manager`.
+*   Updated inline code comments and documentation.
+
 = 1.0.0 =
-* Initial release.
-* Feature: Lazy loading of animations using IntersectionObserver for elements with the `lha-animation-target` class.
-* Feature: Admin settings page ("Animation Optimizer") to enable/disable lazy loading and configure the visibility threshold for triggering animations.
-* Feature: Public-facing JavaScript to handle IntersectionObserver logic and add `lha-animate-now` class to visible elements.
-* Feature: Basic plugin structure based on WordPress Plugin Boilerplate principles for organization and maintainability.
-* Feature: Internationalization support with a defined text domain and languages folder.
+*   Initial release.
+*   Features: Lazy loading of animations using IntersectionObserver, configurable threshold.
 
 == Upgrade Notice ==
 
-= 1.0.0 =
-Initial release of the LHA Animation Optimizer. Configure settings under the "Animation Optimizer" menu in your WordPress admin.
+= 1.1.0 =
+This version introduces a new animation caching system for jQuery and GSAP animations, significantly improving performance on subsequent page loads. It also adds a manual cache clearing option. Please review the new "Automatic Animation Caching" feature description.
 
-== Developer Notes ==
+== Known Issues ==
 
-This plugin is built using an architecture inspired by the WordPress Plugin Boilerplate, promoting a clean, organized, and object-oriented structure. It adheres to WordPress coding standards and security best practices, including namespacing, proper hook usage, data sanitization/validation, nonces for admin forms, and output escaping. Internationalization is supported via the `lha-animation-optimizer` text domain.
-The plugin uses `wp_localize_script` to pass settings from PHP to the public-facing JavaScript. The public JavaScript uses IntersectionObserver to efficiently detect when elements with the class `lha-animation-target` enter the viewport, at which point it adds the `lha-animate-now` class to trigger the CSS-defined animations.
+*   The animation detection for jQuery and GSAP captures common animation patterns. Very complex animations, especially those relying heavily on callbacks, function-based properties, or advanced GSAP plugins like ScrollTrigger, might not be fully replicated from the cache.
+*   Selector generation for detected animations, while improved, might not be perfectly unique in all DOM structures, potentially leading to animations being applied to unintended elements if selectors are too generic.
 
-This file is production-ready.The `readme.txt` file has been created.
+== Support ==
 
-Now for **Task 2: Update `LICENSE.txt`**.
-I need the full text of the GPLv2 license. I will use `view_text_website` to fetch this.
+For support, please use the WordPress.org support forums for this plugin.

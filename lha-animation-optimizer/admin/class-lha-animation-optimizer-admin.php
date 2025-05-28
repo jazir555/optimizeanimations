@@ -162,6 +162,34 @@ class Settings_Manager {
 				'step'        => '0.01', // Allow finer granularity
 			)
 		);
+
+		// Clear Animation Cache Button Field
+		add_settings_field(
+			'clear_animation_cache',
+			__( 'Clear Animation Cache', 'lha-animation-optimizer' ),
+			array( $this, 'render_clear_cache_button_field' ),
+			$this->plugin_name,
+			$section_id,
+			array(
+				'button_id'   => 'lha_clear_animation_cache_button',
+				'description' => __( 'Click this button to clear the animation cache. This will force animations to be reprocessed and can help resolve issues.', 'lha-animation-optimizer' ),
+			)
+		);
+	}
+
+	/**
+	 * Render the Clear Animation Cache button.
+	 *
+	 * @since    1.0.0
+	 * @param    array    $args    Arguments passed to this callback.
+	 */
+	public function render_clear_cache_button_field( $args ) {
+		echo '<button type="button" id="' . esc_attr( $args['button_id'] ) . '" class="button">';
+		echo esc_html__( 'Clear Animation Cache Now', 'lha-animation-optimizer' );
+		echo '</button>';
+		if ( isset( $args['description'] ) ) {
+			echo '<p class="description">' . esc_html( $args['description'] ) . '</p>';
+		}
 	}
 
 	/**
@@ -196,6 +224,11 @@ class Settings_Manager {
 			// If not set, provide a default (or handle as needed)
 			$sanitized_input['intersection_observer_threshold'] = 0.1;
 		}
+
+		// After saving other settings, update the cache version.
+		// This ensures that any changes to settings that might affect animation detection or playback
+		// will trigger a fresh detection cycle on the public side.
+		update_option( 'lha_animation_cache_version', time() );
 
 		return $sanitized_input;
 	}
@@ -250,6 +283,75 @@ class Settings_Manager {
 		if ( isset( $args['description'] ) ) {
 			echo '<p class="description">' . esc_html( $args['description'] ) . '</p>';
 		}
+	}
+
+	/**
+	 * Enqueue admin-specific stylesheet.
+	 *
+	 * @since    1.0.0
+	 */
+	public function enqueue_styles() {
+		wp_enqueue_style(
+			$this->plugin_name . '-admin',
+			plugin_dir_url( __FILE__ ) . 'css/lha-animation-optimizer-admin.css',
+			array(),
+			$this->version,
+			'all'
+		);
+	}
+
+	/**
+	 * Enqueue admin-specific JavaScript.
+	 *
+	 * @since    1.0.0
+	 */
+	public function enqueue_scripts() {
+		wp_enqueue_script(
+			$this->plugin_name . '-admin',
+			plugin_dir_url( __FILE__ ) . 'js/lha-animation-optimizer-admin.js',
+			array( 'jquery' ),
+			$this->version,
+			true // Load in footer
+		);
+
+		// Localize script with data for AJAX requests
+		wp_localize_script(
+			$this->plugin_name . '-admin',
+			'lhaAdminAjax',
+			array(
+				'ajaxUrl'         => admin_url( 'admin-ajax.php' ),
+				'clearCacheNonce' => wp_create_nonce( 'lha_clear_cache_nonce' ),
+				'clearCacheAction' => 'lha_clear_animation_cache', // Added action name for JS
+				'successMessage'  => __( 'Animation cache cleared successfully!', 'lha-animation-optimizer' ),
+				'errorMessage'    => __( 'Error clearing animation cache.', 'lha-animation-optimizer' ),
+			)
+		);
+	}
+
+	/**
+	 * AJAX handler for clearing the animation cache.
+	 *
+	 * @since 1.0.0
+	 */
+	public function ajax_clear_animation_cache() {
+		// Verify the nonce for security.
+		// The nonce field name 'nonce_field_name_in_js' should match what you send from JS.
+		// For simplicity, we'll assume the JS sends 'nonce' as the key for the nonce value.
+		check_ajax_referer( 'lha_clear_cache_nonce', 'nonce' ); // Verify the AJAX request authenticity.
+
+		// Update the cache version option. This effectively invalidates the animation cache,
+		// prompting the detector script to run on the next public page load.
+		update_option( 'lha_animation_cache_version', time() );
+
+		// Also, explicitly clear the detected animations data.
+		delete_option( 'lha_detected_animations_data' );
+
+		// Send a success response.
+		wp_send_json_success(
+			array(
+				'message' => __( 'Animation cache version updated.', 'lha-animation-optimizer' ),
+			)
+		);
 	}
 }
 

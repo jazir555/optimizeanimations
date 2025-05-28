@@ -148,10 +148,9 @@ class Main {
 
 		$this->loader->add_action( 'admin_menu', $plugin_admin, 'add_plugin_admin_menu' );
 		$this->loader->add_action( 'admin_init', $plugin_admin, 'initialize_settings' );
-		// TODO: Add admin_enqueue_scripts hook for admin-specific CSS and JS if/when Admin class is created.
-		// $this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_styles' );
-		// $this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_scripts' );
-
+		$this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_styles' );
+		$this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_scripts' );
+		$this->loader->add_action( 'wp_ajax_lha_clear_animation_cache', $plugin_admin, 'ajax_clear_animation_cache' );
 
 	}
 
@@ -167,7 +166,12 @@ class Main {
 		$plugin_public = new \LHA\Animation_Optimizer\Public_Facing\Public_Script_Manager( $this->get_plugin_name(), $this->get_version() );
 
 		$this->loader->add_action( 'wp_enqueue_scripts', $plugin_public, 'enqueue_styles' );
-		$this->loader->add_action( 'wp_enqueue_scripts', $plugin_public, 'enqueue_scripts' );
+		$this->loader->add_action( 'wp_enqueue_scripts', $plugin_public, 'enqueue_scripts' ); // Existing public script for lazy loading
+		$this->loader->add_action( 'wp_enqueue_scripts', $plugin_public, 'enqueue_detector_script' ); // New detector script
+
+		// AJAX action for saving detected animations
+		$this->loader->add_action( 'wp_ajax_lha_save_detected_animations', $plugin_public, 'ajax_save_detected_animations' );
+		$this->loader->add_action( 'wp_ajax_nopriv_lha_save_detected_animations', $plugin_public, 'ajax_save_detected_animations' );
 
 	}
 
