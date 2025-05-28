@@ -177,9 +177,20 @@ class Settings_Manager {
 			<?php if ( empty( $processed_animations ) ) : ?>
 				<p><?php echo esc_html__( 'No animations detected yet. As you navigate the frontend of your site, detected animations will appear here.', 'lha-animation-optimizer' ); ?></p>
 			<?php else : ?>
+				<div class="lha-bulk-actions-controls" style="margin-bottom: 10px;">
+					<label for="lha-bulk-action-selector" class="screen-reader-text"><?php echo esc_html__( 'Select bulk action', 'lha-animation-optimizer' ); ?></label>
+					<select name="lha_bulk_action" id="lha-bulk-action-selector">
+						<option value=""><?php echo esc_html__( 'Bulk Actions', 'lha-animation-optimizer' ); ?></option>
+						<option value="apply_selected"><?php echo esc_html__( 'Apply Selected Optimizations', 'lha-animation-optimizer' ); ?></option>
+						<?php // Future actions can be added here, e.g., ignore_selected, delete_selected ?>
+					</select>
+					<button type="button" id="lha-apply-bulk-action" class="button action"><?php echo esc_html__( 'Apply Bulk Action', 'lha-animation-optimizer' ); ?></button>
+				</div>
+
 				<table class="wp-list-table widefat fixed striped table-view-list lha-animations-table">
 					<thead>
 						<tr>
+							<th scope="col" class="manage-column column-cb check-column"><input type="checkbox" id="lha-select-all-animations" /></th>
 							<th scope="col"><?php echo esc_html__( 'Selector', 'lha-animation-optimizer' ); ?></th>
 							<th scope="col" style="width: 20%;"><?php echo esc_html__( 'Properties', 'lha-animation-optimizer' ); ?></th>
 							<th scope="col"><?php echo esc_html__( 'Duration', 'lha-animation-optimizer' ); ?></th>
@@ -213,8 +224,12 @@ class Settings_Manager {
 								$first_seen = isset( $animation['first_detected_time'] ) ? $animation['first_detected_time'] : 'N/A';
 								$last_seen = isset( $animation['last_detected_time'] ) ? $animation['last_detected_time'] : 'N/A';
 								$current_status = $animation['effective_status'];
+								$current_log_id = isset( $animation['log_id'] ) ? $animation['log_id'] : $log_id; // Ensure we have the log_id for the checkbox
 							?>
-							<tr id="log-<?php echo esc_attr( $log_id ); ?>">
+							<tr id="log-<?php echo esc_attr( $current_log_id ); ?>">
+								<th scope="row" class="check-column">
+									<input type="checkbox" name="log_ids[]" class="lha-bulk-select-checkbox" value="<?php echo esc_attr( $current_log_id ); ?>" />
+								</th>
 								<td><?php echo esc_html( $selector ); ?></td>
 								<td><small><?php echo wp_kses_post( rtrim($properties_display, '; ') ); // Using wp_kses_post for ; as it's part of style attribute like values ?></small></td>
 								<td><?php echo esc_html( $duration ); ?></td>
@@ -654,20 +669,117 @@ class Settings_Manager {
 	 * @since 1.0.0
 	 */
 	public function handle_bulk_apply_optimizations_ajax() {
-		// Check nonce (using existing dashboard nonce for now, ideally a specific bulk nonce)
-		check_ajax_referer( 'lha_dashboard_actions_nonce', 'nonce' );
+		// 1. Nonce Verification
+		if ( ! check_ajax_referer( 'lha_dashboard_actions_nonce', 'nonce', false ) ) {
+			wp_send_json_error( array( 'message' => __( 'Nonce verification failed.', 'lha-animation-optimizer' ) ), 403 );
+			wp_die();
+		}
 
-		// At this stage, we don't process log_ids or perform actual operations.
-		// This is just a placeholder.
-		// In a real implementation, you would:
-		// 1. Get the list of log_ids from $_POST['log_ids'] (e.g., as an array).
-		// 2. Sanitize each log_id.
-		// 3. Loop through them and call a modified version of handle_apply_optimization_ajax's logic
-		//    or a new shared private method for applying optimization for each log_id.
-		// 4. Collect results or errors.
-		// 5. Potentially regenerate CSS once after all operations.
+		// 2. Retrieve and Validate log_ids
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash
+		$raw_log_ids = isset( $_POST['log_ids'] ) ? $_POST['log_ids'] : null;
 
-		wp_send_json_success( array( 'message' => __( 'Bulk action placeholder successful.', 'lha-animation-optimizer' ) ) );
+		if ( ! is_array( $raw_log_ids ) || empty( $raw_log_ids ) ) {
+			wp_send_json_error( array( 'message' => __( 'No animation IDs provided or invalid format for bulk action.', 'lha-animation-optimizer' ) ), 400 );
+			wp_die();
+		}
+
+		$sanitized_log_ids = array_map( 'sanitize_text_field', $raw_log_ids );
+		// Filter out any empty strings that might result from sanitization if original array had weird values
+		$sanitized_log_ids = array_filter( $sanitized_log_ids );
+
+		if ( empty( $sanitized_log_ids ) ) {
+			wp_send_json_error( array( 'message' => __( 'No valid animation IDs provided after sanitization.', 'lha-animation-optimizer' ) ), 400 );
+			wp_die();
+		}
+
+		// 3. Fetch Options
+		$detected_animations = get_option( 'lha_detected_animations', array() );
+		$applied_optimizations = get_option( 'lha_applied_optimizations', array() );
+		$ignored_animations = get_option( 'lha_ignored_animations', array() );
+
+		// 4. Process Each log_id
+		$processed_count = 0;
+		$error_ids = array();
+
+		foreach ( $sanitized_log_ids as $log_id ) {
+			if ( ! isset( $detected_animations[ $log_id ] ) ) {
+				$error_ids[] = $log_id; // Log or note that this ID was not found
+				continue;
+			}
+
+			$animation_data = $detected_animations[ $log_id ];
+
+			// Ensure required data is present
+			$selector = ! empty( $animation_data['selector'] ) ? $animation_data['selector'] : '.lha-default-selector-' . $log_id;
+			// 'animation_duration' might not exist in older data, use 'duration' if it's there, or default
+			$duration = ! empty( $animation_data['animation_duration'] ) ? $animation_data['animation_duration'] : ( ! empty( $animation_data['duration'] ) ? $animation_data['duration'] : '1s' );
+			$properties_json_string = ! empty( $animation_data['properties'] ) ? $animation_data['properties'] : '{}'; // Already a JSON string
+
+			// Apply Logic:
+			// Add to applied_optimizations
+			$applied_optimizations[ $selector ] = array(
+				'className'  => 'lha-anim-' . $log_id,
+				'duration'   => $duration,
+				'log_id'     => $log_id,
+				'properties' => $properties_json_string,
+			);
+
+			// Remove from ignored_animations if present
+			$ignored_key = array_search( $log_id, $ignored_animations, true );
+			if ( $ignored_key !== false ) {
+				unset( $ignored_animations[ $ignored_key ] );
+			}
+
+			// Update status in detected_animations
+			$detected_animations[ $log_id ]['status'] = 'applied';
+			$processed_count++;
+		}
+
+		// Re-index ignored_animations array
+		$ignored_animations = array_values( $ignored_animations );
+
+		// 5. Update Options
+		update_option( 'lha_detected_animations', $detected_animations );
+		update_option( 'lha_applied_optimizations', $applied_optimizations );
+		update_option( 'lha_ignored_animations', $ignored_animations );
+
+		// 6. Regenerate CSS
+		$this->regenerate_applied_animations_css();
+
+		// 7. Send JSON Response
+		if ( $processed_count > 0 ) {
+			$message = sprintf(
+				/* translators: %d: number of animations processed. */
+				_n(
+					'%d animation optimization successfully applied.',
+					'%d animation optimizations successfully applied.',
+					$processed_count,
+					'lha-animation-optimizer'
+				),
+				$processed_count
+			);
+			if ( ! empty( $error_ids ) ) {
+				$message .= ' ' . sprintf(
+					/* translators: %d: number of animations not found. */
+					_n(
+						'%d ID was not found or could not be processed.',
+						'%d IDs were not found or could not be processed.',
+						count( $error_ids ),
+						'lha-animation-optimizer'
+					),
+					count( $error_ids )
+				);
+				// For more detailed error, could pass $error_ids in response data
+			}
+			wp_send_json_success( array( 'message' => $message, 'processed_count' => $processed_count, 'errors_count' => count($error_ids) ) );
+		} else if ( !empty($error_ids) ) {
+             wp_send_json_error( array( 'message' => __( 'None of the provided animation IDs could be processed.', 'lha-animation-optimizer' ), 'processed_count' => 0, 'errors_count' => count($error_ids) ), 404 );
+        }
+		else {
+			wp_send_json_error( array( 'message' => __( 'No animations were processed. Please check the provided IDs.', 'lha-animation-optimizer' ) ), 400 );
+		}
+		wp_die(); // Should be called after wp_send_json_success/error
 	}
 }
 
