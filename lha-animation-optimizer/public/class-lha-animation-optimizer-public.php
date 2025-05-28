@@ -107,18 +107,30 @@ class Public_Script_Manager {
 			// Cache is valid: Use the inline shunt + dynamic loading for the player script.
 			$player_script_url = plugin_dir_url( __FILE__ ) . 'js/lha-animation-optimizer-public.js';
 			
-			$is_debug = defined( 'SCRIPT_DEBUG' ) && SCRIPT_DEBUG;
-			$shunt_script_filename = $is_debug ? 'js/lha-inline-shunt-logic.js' : 'js/lha-inline-shunt-logic.min.js';
-			$shunt_script_path = plugin_dir_path( __FILE__ ) . $shunt_script_filename;
+			// --- Shunt Script Loading Logic ---
+			// Always try to load the minified version first for production efficiency.
+			// If .min.js is not found or readable, fall back to the non-minified .js version.
+			// SCRIPT_DEBUG is not used for this choice; the priority is always .min.js if available.
+			$min_shunt_script_path = plugin_dir_path( __FILE__ ) . 'js/lha-inline-shunt-logic.min.js';
+			$dev_shunt_script_path = plugin_dir_path( __FILE__ ) . 'js/lha-inline-shunt-logic.js';
 			$shunt_script_content = '';
+			// $used_fallback_shunt = false; // This variable was in the previous version but not used after this block. Removed for simplicity.
 
-			if ( file_exists( $shunt_script_path ) && is_readable( $shunt_script_path ) ) {
-				$shunt_script_content = file_get_contents( $shunt_script_path );
-			} elseif ( ! $is_debug && file_exists( plugin_dir_path( __FILE__ ) . 'js/lha-inline-shunt-logic.js' ) ) {
-				// Fallback: If .min.js is missing and SCRIPT_DEBUG is false, try the non-minified version.
-				$shunt_script_content = file_get_contents( plugin_dir_path( __FILE__ ) . 'js/lha-inline-shunt-logic.js' );
-				if ( WP_DEBUG && $shunt_script_content ) { // Log only if content was successfully read
-					error_log( 'LHA Animation Optimizer: Minified shunt script (' . $shunt_script_filename . ') missing or unreadable. Using full version as fallback.' );
+			// Try to load the minified version first.
+			if ( file_exists( $min_shunt_script_path ) && is_readable( $min_shunt_script_path ) ) {
+				$shunt_script_content = file_get_contents( $min_shunt_script_path );
+			} elseif ( file_exists( $dev_shunt_script_path ) && is_readable( $dev_shunt_script_path ) ) {
+				// If minified version is not found or unreadable, fall back to the development version.
+				$shunt_script_content = file_get_contents( $dev_shunt_script_path );
+				// $used_fallback_shunt = true; // Mark that fallback was used.
+				if ( defined( 'WP_DEBUG' ) && WP_DEBUG && $shunt_script_content ) { // Log only if WP_DEBUG is true and content was successfully read.
+					error_log( 'LHA Animation Optimizer: Minified shunt script (lha-inline-shunt-logic.min.js) is missing or unreadable. Using development version (lha-inline-shunt-logic.js) as a fallback.' );
+				}
+			} else {
+				// Neither minified nor development version found.
+				// This case will be handled by the `empty($shunt_script_content)` check below, leading to `enqueue_player_script_fallback`.
+				if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+					error_log( 'LHA Animation Optimizer: CRITICAL - Both minified and development shunt script files are missing or unreadable. Path attempted for minified: ' . $min_shunt_script_path );
 				}
 			}
 
@@ -139,10 +151,9 @@ class Public_Script_Manager {
 					1 
 				);
 			} else {
-				// Shunt script content could not be loaded, fallback to old method.
-				if ( WP_DEBUG ) {
-					error_log( 'LHA Animation Optimizer: Shunt script could not be loaded from ' . $shunt_script_path . ' (and fallback if applicable). Falling back to standard player script enqueue.' );
-				}
+				// Shunt script content could not be loaded (neither .min.js nor .js found/readable).
+				// Fallback to the standard method of enqueuing the player script externally.
+				// The error_log for this specific failure (both files missing) is handled above.
 				$this->enqueue_player_script_fallback( $player_script_handle, $player_settings, $detected_animations_data );
 			}
 
