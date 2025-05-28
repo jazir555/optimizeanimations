@@ -175,6 +175,68 @@ class Settings_Manager {
 				'description' => __( 'Click this button to clear the animation cache. This will force animations to be reprocessed and can help resolve issues.', 'lha-animation-optimizer' ),
 			)
 		);
+
+		// --- New Settings Fields for Detection Mechanisms and Debug Mode ---
+
+		// Enable Advanced jQuery Detection Field
+		add_settings_field(
+			'enable_advanced_jquery_detection',
+			__( 'Enable Advanced jQuery Detection', 'lha-animation-optimizer' ),
+			array( $this, 'render_checkbox_field' ),
+			$this->plugin_name,
+			$section_id,
+			array(
+				'label_for'   => 'enable_advanced_jquery_detection',
+				'option_name' => $this->option_name,
+				'default_value' => 1, // Default to true (checked)
+				'description' => __( 'Detect animations from specific jQuery methods like fadeIn, slideUp, etc., beyond the basic .animate().', 'lha-animation-optimizer' ),
+			)
+		);
+
+		// Enable Advanced GSAP Detection Field
+		add_settings_field(
+			'enable_advanced_gsap_detection',
+			__( 'Enable Advanced GSAP Detection', 'lha-animation-optimizer' ),
+			array( $this, 'render_checkbox_field' ),
+			$this->plugin_name,
+			$section_id,
+			array(
+				'label_for'   => 'enable_advanced_gsap_detection',
+				'option_name' => $this->option_name,
+				'default_value' => 1, // Default to true (checked)
+				'description' => __( 'Attempt to detect more GSAP animations by observing Timeline creation.', 'lha-animation-optimizer' ),
+			)
+		);
+
+		// Enable MutationObserver Field
+		add_settings_field(
+			'enable_mutation_observer',
+			__( 'Enable CSS Animation/Transition Detection (MutationObserver)', 'lha-animation-optimizer' ),
+			array( $this, 'render_checkbox_field' ),
+			$this->plugin_name,
+			$section_id,
+			array(
+				'label_for'   => 'enable_mutation_observer',
+				'option_name' => $this->option_name,
+				'default_value' => 1, // Default to true (checked)
+				'description' => __( 'Detect CSS-based animations and transitions. May have a performance impact on complex sites.', 'lha-animation-optimizer' ),
+			)
+		);
+
+		// Enable Debug Mode Field
+		add_settings_field(
+			'enable_debug_mode',
+			__( 'Enable Debug Mode', 'lha-animation-optimizer' ),
+			array( $this, 'render_checkbox_field' ),
+			$this->plugin_name,
+			$section_id,
+			array(
+				'label_for'   => 'enable_debug_mode',
+				'option_name' => $this->option_name,
+				'default_value' => 0, // Default to false (unchecked)
+				'description' => __( 'Log detailed animation detection information to the browser console. Useful for troubleshooting.', 'lha-animation-optimizer' ),
+			)
+		);
 	}
 
 	/**
@@ -225,10 +287,23 @@ class Settings_Manager {
 			$sanitized_input['intersection_observer_threshold'] = 0.1;
 		}
 
-		// After saving other settings, update the cache version.
+		// Sanitize new checkbox settings
+		$checkbox_settings = array(
+			'enable_advanced_jquery_detection',
+			'enable_advanced_gsap_detection',
+			'enable_mutation_observer',
+			'enable_debug_mode',
+		);
+
+		foreach ( $checkbox_settings as $setting_name ) {
+			$sanitized_input[ $setting_name ] = ( isset( $input[ $setting_name ] ) && '1' === $input[ $setting_name ] ) ? 1 : 0;
+		}
+
+		// After saving any settings in this group, always update the cache version and clear detected data.
 		// This ensures that any changes to settings that might affect animation detection or playback
 		// will trigger a fresh detection cycle on the public side.
 		update_option( 'lha_animation_cache_version', time() );
+		delete_option( 'lha_detected_animations_data' ); // Clear the actual cached data.
 
 		return $sanitized_input;
 	}
@@ -249,8 +324,10 @@ class Settings_Manager {
 	 * @param    array    $args    Arguments passed to this callback.
 	 */
 	public function render_checkbox_field( $args ) {
-		$options = get_option( $args['option_name'], array() ); // Get all options or empty array if not set
-		$value = isset( $options[ $args['label_for'] ] ) ? $options[ $args['label_for'] ] : 1; // Default to 1 (true/checked)
+		$options = get_option( $args['option_name'], array() ); 
+		// Use the 'default_value' from $args if the option is not set yet.
+		// This correctly applies defaults on the first view of the settings page after adding a new option.
+		$value = isset( $options[ $args['label_for'] ] ) ? $options[ $args['label_for'] ] : ( isset( $args['default_value'] ) ? $args['default_value'] : 0 );
 
 		echo '<input type="checkbox" id="' . esc_attr( $args['label_for'] ) . '" name="' . esc_attr( $args['option_name'] . '[' . $args['label_for'] . ']' ) . '" value="1" ' . checked( 1, $value, false ) . ' />';
 		if ( isset( $args['description'] ) ) {

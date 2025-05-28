@@ -145,11 +145,23 @@ class Public_Script_Manager {
 				$this->version,
 				true // Load in footer.
 			);
-			// Provide necessary settings for the detector script (AJAX URL, action, nonce).
+			// Provide necessary settings for the detector script (AJAX URL, action, nonce, and new feature flags).
 			$detector_script_settings = array(
 				'ajaxUrl'    => admin_url( 'admin-ajax.php' ),
 				'saveAction' => 'lha_save_detected_animations', // AJAX action for saving detected data.
 				'saveNonce'  => wp_create_nonce( 'lha_save_detected_animations_nonce' ), // Nonce for the save action.
+				
+				// --- Phase 2: Detection Control & Debug Settings ---
+				// Retrieve these settings from the main options array ($options).
+				// Provide defaults that match those in `Settings_Manager::initialize_settings` if not found.
+				'enableAdvancedJQueryDetection' => isset( $options['enable_advanced_jquery_detection'] ) ? 
+													(bool) $options['enable_advanced_jquery_detection'] : true,
+				'enableAdvancedGSAPDetection'   => isset( $options['enable_advanced_gsap_detection'] ) ? 
+													(bool) $options['enable_advanced_gsap_detection'] : true,
+				'enableMutationObserver'        => isset( $options['enable_mutation_observer'] ) ? 
+													(bool) $options['enable_mutation_observer'] : true,
+				'debugMode'                     => isset( $options['enable_debug_mode'] ) ? 
+													(bool) $options['enable_debug_mode'] : false,
 			);
 			wp_localize_script( $detector_script_handle, 'lhaDetectorSettings', $detector_script_settings );
 
