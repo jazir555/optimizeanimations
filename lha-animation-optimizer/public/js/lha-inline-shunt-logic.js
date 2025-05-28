@@ -3,38 +3,32 @@
 
     /**
      * LHA Animation Optimizer - Inline Shunt Script
-     * 
-     * This script is injected inline into the <head> of the page when a valid animation cache exists.
-     * Its primary responsibilities are:
-     * 1. Initialize global variables for queuing early animation calls (`lhaEarlyAnimationQueue`)
-     *    and storing original animation functions (`LHA_Originals`).
-     * 2. Dynamically load the main player script (`lha-animation-optimizer-public.js` via `window.lhaPlayerScriptUrl`).
-     * 3. Intercept (shunt) calls to common jQuery and GSAP animation methods if these libraries are already loaded.
-     *    - Shunted calls are added to `lhaEarlyAnimationQueue` instead of executing immediately.
-     *    - Original methods are stored in `LHA_Originals` for later restoration by the main player script.
-     * 
-     * This two-step approach (inline shunt + async main player) helps to:
-     * - Minimize render-blocking JavaScript.
-     * - Capture animations that might be called very early in the page lifecycle (e.g., by other inline scripts).
-     * - Ensure that the main player script has all necessary data (preloaded settings and animations)
-     *   and can correctly process any early animation calls.
-     *
-     * Assumes PHP has defined the following globals before this script runs:
-     * - `window.lhaPreloadedAnimations`: Array of cached animation data.
-     * - `window.lhaPreloadedSettings`: Object containing player settings (including debugMode).
-     * - `window.lhaPlayerScriptUrl`: String URL to the main player script.
+     * (Detailed description from previous turn remains relevant)
      */
 
-    // Helper for shunt-specific debug logging, checks preloaded settings
+    // --- Settings Initialization ---
+    // Assumes window.lhaPreloadedSettings is defined by PHP.
+    // Provides defaults if any setting is missing.
+    const LHA_settings = window.lhaPreloadedSettings || {};
+    const LHA_debugMode = LHA_settings.debugMode === true; // Ensure boolean
+    // New settings for shunt interception: Default to true (interception enabled) if the setting is undefined.
+    const LHA_shuntEnableJqueryIntercept = LHA_settings.shuntEnableJqueryInterception !== false; 
+    const LHA_shuntEnableGsapIntercept = LHA_settings.shuntEnableGsapInterception !== false;  
+
+    // Helper for shunt-specific debug logging
     function shuntDebugLog(...args) {
-        // Check for settings and debugMode on each call, as they are set by PHP just before this script.
-        if (window.lhaPreloadedSettings && window.lhaPreloadedSettings.debugMode) {
-            console.log('LHA Shunt:', ...args);
+        // Use the LHA_debugMode constant derived from settings.
+        if (LHA_debugMode && window.console && typeof console.log === 'function') {
+            // Prepend "LHA Shunt:" to all debug messages.
+            Array.prototype.unshift.call(args, 'LHA Shunt:');
+            console.log.apply(console, args);
         }
     }
 
-    shuntDebugLog('Initializing.');
-
+    shuntDebugLog('Initializing. Debug Mode:', LHA_debugMode);
+    shuntDebugLog('jQuery Interception Setting:', LHA_shuntEnableJqueryIntercept);
+    shuntDebugLog('GSAP Interception Setting:', LHA_shuntEnableGsapIntercept);
+    
     // 1. Global Variables and Data Handling
     // Queue for animation calls made before the main player script loads and restores originals.
     window.lhaEarlyAnimationQueue = window.lhaEarlyAnimationQueue || [];
@@ -65,6 +59,11 @@
 
     // jQuery Interception: Wraps common jQuery animation methods.
     function wrapJQueryMethods() {
+        if (!LHA_shuntEnableJqueryIntercept) {
+            shuntDebugLog('jQuery interception disabled by setting.');
+            return;
+        }
+
         // Check if jQuery exists, its `fn` property is an object, and if it hasn't been wrapped already by this shunt.
         if (typeof window.jQuery !== 'function' || 
             typeof window.jQuery.fn !== 'object' || 
@@ -72,7 +71,7 @@
             shuntDebugLog('jQuery not ready for shunting or already shunted by LHA.');
             return;
         }
-        shuntDebugLog('jQuery detected. Attempting to wrap animation methods.');
+        shuntDebugLog('jQuery interception enabled, attempting to wrap methods.');
 
         const jqueryMethodsToWrap = [
             'animate', 'fadeIn', 'fadeOut', 'slideDown', 'slideUp', 
@@ -111,12 +110,17 @@
 
     // GSAP Interception: Wraps common GSAP static animation methods.
     function wrapGSAPMethods() {
+        if (!LHA_shuntEnableGsapIntercept) {
+            shuntDebugLog('GSAP interception disabled by setting.');
+            return;
+        }
+
         // Check if GSAP exists and hasn't been wrapped already by this shunt.
         if (typeof window.gsap !== 'object' || window.gsap.lhaShuntWrapped) {
             shuntDebugLog('GSAP not ready for shunting or already shunted by LHA.');
             return;
         }
-        shuntDebugLog('GSAP detected. Attempting to wrap animation methods.');
+        shuntDebugLog('GSAP interception enabled, attempting to wrap methods.');
 
         const gsapMethodsToWrap = ['to', 'from', 'fromTo']; // Common static methods.
 

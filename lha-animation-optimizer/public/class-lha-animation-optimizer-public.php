@@ -96,65 +96,107 @@ class Public_Script_Manager {
 		$options = get_option( $this->plugin_name . '_options', array() );
 
 		// Prepare settings data for player/detector scripts.
+		// This includes general player settings and specific settings for the shunt script if used.
 		$player_settings = array(
 			'lazyLoadAnimations'            => isset( $options['lazy_load_animations'] ) ? (bool) $options['lazy_load_animations'] : true,
 			'intersectionObserverThreshold' => isset( $options['intersection_observer_threshold'] ) ? (float) $options['intersection_observer_threshold'] : 0.1,
-			'debugMode'                     => isset( $options['enable_debug_mode'] ) ? (bool) $options['enable_debug_mode'] : false, // Player also gets debugMode
-			'animationTriggerClass'         => 'lha-animate-now', // Default, could be made a setting later
+			'debugMode'                     => isset( $options['enable_debug_mode'] ) ? (bool) $options['enable_debug_mode'] : false, 
+			'animationTriggerClass'         => 'lha-animate-now', // Default trigger class for CSS animations.
+			
+			// --- Phase 4: Shunt Interception Control Settings for lhaPreloadedSettings ---
+			// These control if the shunt script will attempt to intercept jQuery/GSAP calls.
+			// Defaults to true if the specific option is not found (e.g., new install, or before these settings were added).
+			'shuntEnableJqueryInterception' => isset( $options['shunt_enable_jquery_interception'] ) ? 
+												(bool) $options['shunt_enable_jquery_interception'] : true,
+			'shuntEnableGsapInterception'   => isset( $options['shunt_enable_gsap_interception'] ) ? 
+												(bool) $options['shunt_enable_gsap_interception'] : true,
 		);
 
 		if ( $is_cache_valid ) {
-			// Cache is valid: Use the inline shunt + dynamic loading for the player script.
+			// Cache is valid: Decide whether to use inline shunt or fallback based on data size.
 			$player_script_url = plugin_dir_url( __FILE__ ) . 'js/lha-animation-optimizer-public.js';
-			
-			// --- Shunt Script Loading Logic ---
-			// Always try to load the minified version first for production efficiency.
-			// If .min.js is not found or readable, fall back to the non-minified .js version.
-			// SCRIPT_DEBUG is not used for this choice; the priority is always .min.js if available.
-			$min_shunt_script_path = plugin_dir_path( __FILE__ ) . 'js/lha-inline-shunt-logic.min.js';
-			$dev_shunt_script_path = plugin_dir_path( __FILE__ ) . 'js/lha-inline-shunt-logic.js';
-			$shunt_script_content = '';
-			// $used_fallback_shunt = false; // This variable was in the previous version but not used after this block. Removed for simplicity.
+			$cached_animations = is_array( $detected_animations_data ) ? $detected_animations_data : array();
 
-			// Try to load the minified version first.
-			if ( file_exists( $min_shunt_script_path ) && is_readable( $min_shunt_script_path ) ) {
-				$shunt_script_content = file_get_contents( $min_shunt_script_path );
-			} elseif ( file_exists( $dev_shunt_script_path ) && is_readable( $dev_shunt_script_path ) ) {
-				// If minified version is not found or unreadable, fall back to the development version.
-				$shunt_script_content = file_get_contents( $dev_shunt_script_path );
-				// $used_fallback_shunt = true; // Mark that fallback was used.
-				if ( defined( 'WP_DEBUG' ) && WP_DEBUG && $shunt_script_content ) { // Log only if WP_DEBUG is true and content was successfully read.
-					error_log( 'LHA Animation Optimizer: Minified shunt script (lha-inline-shunt-logic.min.js) is missing or unreadable. Using development version (lha-inline-shunt-logic.js) as a fallback.' );
+			// --- Phase 4: Shunt Data Size Check ---
+			// Retrieve the admin-defined threshold for inlining data with the shunt script. Default to 5KB.
+			$shunt_threshold_kb = isset( $options['shunt_data_size_threshold_kb'] ) ? 
+									(int) $options['shunt_data_size_threshold_kb'] : 5; // Default threshold.
+
+			$use_inline_shunt = true; // Assume inline shunt will be used unless data size exceeds threshold.
+			$log_data_size_check = defined( 'WP_DEBUG' ) && WP_DEBUG && $player_settings['debugMode'];
+
+			// If $shunt_threshold_kb is 0, the size check is disabled, and inline shunt is always attempted (if cache is valid).
+			if ( $shunt_threshold_kb > 0 ) {
+				// Calculate the size of the JSON-encoded animation data.
+				$json_cached_animations = wp_json_encode( $cached_animations );
+				$data_size_bytes = strlen( $json_cached_animations );
+				$data_size_kb = $data_size_bytes / 1024;
+
+				if ( $data_size_kb > $shunt_threshold_kb ) {
+					$use_inline_shunt = false; // Data size exceeds the configured threshold.
+					if ( $log_data_size_check ) {
+						error_log(
+							sprintf(
+								'LHA Animation Optimizer: Inline animation data size (~%.2f KB) exceeds threshold (%d KB). Falling back to external player script loading.',
+								$data_size_kb,
+								$shunt_threshold_kb
+							)
+						);
+					}
+				} elseif ( $log_data_size_check ) {
+					error_log(
+						sprintf(
+							'LHA Animation Optimizer: Inline animation data size (~%.2f KB) is within threshold (%d KB). Proceeding with inline shunt.',
+							$data_size_kb,
+							$shunt_threshold_kb
+						)
+					);
 				}
-			} else {
-				// Neither minified nor development version found.
-				// This case will be handled by the `empty($shunt_script_content)` check below, leading to `enqueue_player_script_fallback`.
-				if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-					error_log( 'LHA Animation Optimizer: CRITICAL - Both minified and development shunt script files are missing or unreadable. Path attempted for minified: ' . $min_shunt_script_path );
-				}
+			} elseif ( $log_data_size_check ) {
+				error_log( 'LHA Animation Optimizer: Shunt data size threshold is 0 KB (disabled). Proceeding with inline shunt.' );
 			}
 
-			if ( ! empty( $shunt_script_content ) ) {
-				$inline_js  = '<script id="lha-inline-shunt-script" type="text/javascript">';
-				$cached_animations = is_array( $detected_animations_data ) ? $detected_animations_data : array();
-				$inline_js .= 'window.lhaPreloadedAnimations = ' . wp_json_encode( $cached_animations ) . ';';
-				$inline_js .= 'window.lhaPreloadedSettings = ' . wp_json_encode( $player_settings ) . ';';
-				$inline_js .= 'window.lhaPlayerScriptUrl = "' . esc_url( $player_script_url ) . '?ver=' . $this->version .'";';
-				$inline_js .= $shunt_script_content;
-				$inline_js .= '</script>';
+			if ( $use_inline_shunt ) {
+				// --- Shunt Script Loading Logic ---
+				$min_shunt_script_path = plugin_dir_path( __FILE__ ) . 'js/lha-inline-shunt-logic.min.js';
+				$dev_shunt_script_path = plugin_dir_path( __FILE__ ) . 'js/lha-inline-shunt-logic.js';
+				$shunt_script_content = '';
 
-				add_action(
-					'wp_head',
-					function() use ( $inline_js ) {
-						echo $inline_js;
-					},
-					1 
-				);
+				if ( file_exists( $min_shunt_script_path ) && is_readable( $min_shunt_script_path ) ) {
+					$shunt_script_content = file_get_contents( $min_shunt_script_path );
+				} elseif ( file_exists( $dev_shunt_script_path ) && is_readable( $dev_shunt_script_path ) ) {
+					$shunt_script_content = file_get_contents( $dev_shunt_script_path );
+					if ( defined( 'WP_DEBUG' ) && WP_DEBUG && $shunt_script_content ) {
+						error_log( 'LHA Animation Optimizer: Minified shunt script (lha-inline-shunt-logic.min.js) is missing or unreadable. Using development version (lha-inline-shunt-logic.js) as a fallback.' );
+					}
+				} else {
+					if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+						error_log( 'LHA Animation Optimizer: CRITICAL - Both minified and development shunt script files are missing or unreadable. Path attempted for minified: ' . $min_shunt_script_path );
+					}
+				}
+
+				if ( ! empty( $shunt_script_content ) ) {
+					if ( defined( 'WP_DEBUG' ) && WP_DEBUG && $player_settings['debugMode'] ) {
+						error_log( 'LHA Animation Optimizer: Injecting inline shunt script. Preloaded settings: ' . wp_json_encode( $player_settings ) );
+					}
+					$inline_js  = '<script id="lha-inline-shunt-script" type="text/javascript">';
+					$inline_js .= 'window.lhaPreloadedAnimations = ' . wp_json_encode( $cached_animations ) . ';';
+					$inline_js .= 'window.lhaPreloadedSettings = ' . wp_json_encode( $player_settings ) . ';';
+					$inline_js .= 'window.lhaPlayerScriptUrl = "' . esc_url( $player_script_url ) . '?ver=' . $this->version .'";';
+					$inline_js .= $shunt_script_content;
+					$inline_js .= '</script>';
+
+					add_action( 'wp_head', function() use ( $inline_js ) { echo $inline_js; }, 1 );
+				} else {
+					// Shunt script content could not be loaded, fallback to external player script.
+					if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+						error_log( 'LHA Animation Optimizer: Shunt script content is empty (both .min.js and .js versions failed to load). Falling back to standard player script enqueue.' );
+					}
+					$this->enqueue_player_script_fallback( $player_script_handle, $player_settings, $cached_animations );
+				}
 			} else {
-				// Shunt script content could not be loaded (neither .min.js nor .js found/readable).
-				// Fallback to the standard method of enqueuing the player script externally.
-				// The error_log for this specific failure (both files missing) is handled above.
-				$this->enqueue_player_script_fallback( $player_script_handle, $player_settings, $detected_animations_data );
+				// Data size exceeded threshold, use fallback loading method.
+				$this->enqueue_player_script_fallback( $player_script_handle, $player_settings, $cached_animations );
 			}
 
 		} else {

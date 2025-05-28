@@ -237,6 +237,57 @@ class Settings_Manager {
 				'description' => __( 'Log detailed animation detection information to the browser console. Useful for troubleshooting.', 'lha-animation-optimizer' ),
 			)
 		);
+
+		// Shunt Data Size Threshold Field
+		add_settings_field(
+			'shunt_data_size_threshold_kb',
+			__( 'Inline Data Size Threshold (KB)', 'lha-animation-optimizer' ),
+			array( $this, 'render_number_field' ),
+			$this->plugin_name,
+			$section_id,
+			array(
+				'label_for'   => 'shunt_data_size_threshold_kb',
+				'option_name' => $this->option_name,
+				'default_value' => 5, // Default to 5 KB
+				'description' => __( 'Maximum size for animation data to be inlined with the shunt script (0 to disable this check and always attempt inline if possible). If exceeded, the plugin will load animations using an external script instead. Default: 5 KB.', 'lha-animation-optimizer' ),
+				'input_type'  => 'number',
+				'min'         => '0',
+				'max'         => '100', // Max 100 KB, can be adjusted
+				'step'        => '1',
+			)
+		);
+
+		// --- New Settings Fields for Shunt Script Interception Control (Phase 3 Refinement) ---
+
+		// Enable jQuery Interception by Shunt Script
+		add_settings_field(
+			'shunt_enable_jquery_interception',
+			__( 'Enable jQuery Interception by Shunt Script', 'lha-animation-optimizer' ),
+			array( $this, 'render_checkbox_field' ),
+			$this->plugin_name,
+			$section_id,
+			array(
+				'label_for'   => 'shunt_enable_jquery_interception',
+				'option_name' => $this->option_name,
+				'default_value' => 1, // Default to true (checked)
+				'description' => __( 'Allow the early inline script (shunt) to temporarily pause/queue jQuery animations. Disable if conflicts occur with other scripts or specific jQuery setups.', 'lha-animation-optimizer' ),
+			)
+		);
+
+		// Enable GSAP Interception by Shunt Script
+		add_settings_field(
+			'shunt_enable_gsap_interception',
+			__( 'Enable GSAP Interception by Shunt Script', 'lha-animation-optimizer' ),
+			array( $this, 'render_checkbox_field' ),
+			$this->plugin_name,
+			$section_id,
+			array(
+				'label_for'   => 'shunt_enable_gsap_interception',
+				'option_name' => $this->option_name,
+				'default_value' => 1, // Default to true (checked)
+				'description' => __( 'Allow the early inline script (shunt) to temporarily pause/queue GSAP animations. Disable if conflicts occur.', 'lha-animation-optimizer' ),
+			)
+		);
 	}
 
 	/**
@@ -293,11 +344,54 @@ class Settings_Manager {
 			'enable_advanced_gsap_detection',
 			'enable_mutation_observer',
 			'enable_debug_mode',
+			'shunt_enable_jquery_interception', // Added for Phase 3 Refinement
+			'shunt_enable_gsap_interception',   // Added for Phase 3 Refinement
 		);
 
 		foreach ( $checkbox_settings as $setting_name ) {
+			// Check if the key exists in $input, if not, it means the checkbox was unchecked, so set to 0.
+			// Default values for these are handled by `render_checkbox_field` if the option is not yet in the database.
 			$sanitized_input[ $setting_name ] = ( isset( $input[ $setting_name ] ) && '1' === $input[ $setting_name ] ) ? 1 : 0;
 		}
+		
+		// Ensure that if a setting is not in $input (e.g. new setting, form not fully submitted), 
+		// it gets a default value if it's a checkbox that should default to true.
+		// The default_value in add_settings_field and render_checkbox_field handles initial display.
+		// For sanitization, if a checkbox that defaults to true is simply not in $input, it means it was unchecked.
+		// However, for newly added settings that were not previously in the options array, this loop ensures they get a 0 if not submitted.
+		// For settings that should default to 1 (true/checked) even if not in input (which is unusual for checkboxes on save),
+		// specific logic would be needed here. Current setup correctly saves 0 if checkbox is unchecked.
+		// The render_checkbox_field handles the "default display" correctly.
+		// For saving, if a checkbox is not in $input, it's 0. If it's in $input and value is "1", it's 1.
+
+		// Sanitize 'shunt_data_size_threshold_kb'
+		$default_shunt_threshold = 5;
+		$min_shunt_threshold = 0;
+		$max_shunt_threshold = 100; // Matches field definition
+
+		if ( isset( $input['shunt_data_size_threshold_kb'] ) ) {
+			$threshold_kb = intval( $input['shunt_data_size_threshold_kb'] );
+			if ( $threshold_kb >= $min_shunt_threshold && $threshold_kb <= $max_shunt_threshold ) {
+				$sanitized_input['shunt_data_size_threshold_kb'] = $threshold_kb;
+			} else {
+				$sanitized_input['shunt_data_size_threshold_kb'] = $default_shunt_threshold; // Reset to default if out of range
+				add_settings_error(
+					$this->option_name,
+					'shunt_threshold_out_of_range',
+					sprintf(
+						__( 'Inline Data Size Threshold must be between %d KB and %d KB. Reverted to default (%d KB).', 'lha-animation-optimizer' ),
+						$min_shunt_threshold,
+						$max_shunt_threshold,
+						$default_shunt_threshold
+					),
+					'error'
+				);
+			}
+		} else {
+			// If not set, provide a default.
+			$sanitized_input['shunt_data_size_threshold_kb'] = $default_shunt_threshold;
+		}
+
 
 		// After saving any settings in this group, always update the cache version and clear detected data.
 		// This ensures that any changes to settings that might affect animation detection or playback
@@ -343,7 +437,9 @@ class Settings_Manager {
 	 */
 	public function render_number_field( $args ) {
 		$options = get_option( $args['option_name'], array() );
-		$value = isset( $options[ $args['label_for'] ] ) ? $options[ $args['label_for'] ] : 0.1; // Default to 0.1
+		// Use the 'default_value' from $args if the option is not set yet.
+		$default_value = isset( $args['default_value'] ) ? $args['default_value'] : 0;
+		$value = isset( $options[ $args['label_for'] ] ) ? $options[ $args['label_for'] ] : $default_value;
 
 		echo '<input type="' . esc_attr( $args['input_type'] ) . '" id="' . esc_attr( $args['label_for'] ) . '" name="' . esc_attr( $args['option_name'] . '[' . $args['label_for'] . ']' ) . '" value="' . esc_attr( $value ) . '"';
 		if ( isset( $args['min'] ) ) {

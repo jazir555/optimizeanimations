@@ -3,11 +3,11 @@ Contributors: LHA Plugin Author
 Tags: animation, performance, optimization, jquery, gsap, css animation, css transition, lazy load, mutationobserver, inline script
 Requires at least: 5.0
 Tested up to: 6.4
-Stable tag: 2.1.0
+Stable tag: 2.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Optimizes web animations for speed and performance by lazy loading, and by detecting and caching JavaScript-based and CSS-based animations. Now features an advanced two-step loading mechanism for cached animations.
+Optimizes web animations for speed and performance by lazy loading, and by detecting and caching JavaScript-based and CSS-based animations. Features an advanced two-step loading mechanism for cached animations with configurable data size limits and interception controls.
 
 == Description ==
 
@@ -15,13 +15,13 @@ LHA Animation Optimizer significantly enhances your website's performance by int
 
 1.  **Lazy Loading of Animations:** All animations (CSS, jQuery, GSAP, etc.) associated with elements having the `.lha-animation-target` class (or elements with detected animations) will only play when the element scrolls into the viewport. This prevents a flood of animations from playing simultaneously on page load, improving perceived performance and reducing initial processing.
 
-2.  **Automatic Animation Caching (Enhanced in 2.0.0, Refined in 2.1.0):** The plugin automatically detects a wide range of animations on a user's first visit (or when the cache is empty/invalidated). These include jQuery, GSAP, CSS Keyframe Animations, and CSS Transitions.
-    These detected animation details are stored in a cache. On subsequent page views, if a valid cache exists, a new **two-step loading mechanism** is used:
-    *   A very small inline "shunt" script is added to the page header. This script contains the cached animation data and settings. Its primary roles are to intercept any animation calls (jQuery/GSAP) that occur very early in the page load (e.g., from other inline scripts) and to dynamically load the main animation player script.
-    *   The main player script (`lha-animation-optimizer-public.js`) then loads asynchronously. Once loaded, it restores any intercepted animation functions to their original state, processes the queue of early animation calls (ensuring they execute correctly), and then manages the initialization and lazy-loaded playback of all cached animations.
-    This two-step approach minimizes the initial HTML impact, ensures even very early or inline animations can be captured and managed, and optimizes the overall script loading strategy for cached views.
+2.  **Automatic Animation Caching (Enhanced in 2.0.0, Refined in 2.1.0 & 2.2.0):** The plugin automatically detects a wide range of animations on a user's first visit (or when the cache is empty/invalidated). These include jQuery, GSAP, CSS Keyframe Animations, and CSS Transitions.
+    These detected animation details are stored in a cache. On subsequent page views, if a valid cache exists, a **two-step loading mechanism** is used:
+    *   A very small inline "shunt" script is added to the page header. This script contains the cached animation data and settings. Its primary roles are to intercept any animation calls (jQuery/GSAP, if enabled) that occur very early in the page load and to dynamically load the main animation player script. The size of data inlined with this shunt script is configurable to prevent excessive HTML bloat.
+    *   The main player script (`lha-animation-optimizer-public.js`) then loads asynchronously. Once loaded, it restores any intercepted animation functions to their original state, processes the queue of early animation calls, and then manages the initialization and lazy-loaded playback of all cached animations.
+    This two-step approach minimizes the initial HTML impact, ensures even very early or inline animations can be captured and managed (if interception is enabled), and optimizes the overall script loading strategy for cached views.
 
-The plugin provides a comprehensive admin settings page to control lazy loading, animation detection mechanisms, and a debug mode for troubleshooting.
+The plugin provides a comprehensive admin settings page to control lazy loading, animation detection mechanisms, shunt script behavior, and a debug mode.
 
 == Features ==
 
@@ -32,13 +32,15 @@ The plugin provides a comprehensive admin settings page to control lazy loading,
     *   **Advanced GSAP Detection:** Identifies tweens created with `gsap.to()`, `gsap.fromTo()`, etc., and those added to timelines via `Timeline.prototype.add`. Captures "fromTo" states and stagger properties.
     *   **CSS Animation & Transition Detection:** Uses `MutationObserver` to detect CSS keyframe animations and transitions.
     *   Caches detailed animation data.
-*   **Two-Step Inline Player for Cached Animations (New in 2.1.0):**
-    *   When cache is valid, a minimal inline "shunt" script is injected into the page header.
-    *   This shunt script holds preloaded animation data/settings, queues early jQuery/GSAP calls, and dynamically loads the main player script.
+*   **Two-Step Inline Player for Cached Animations:**
+    *   When cache is valid, a minimal inline "shunt" script is injected.
+    *   This shunt script holds preloaded animation data/settings, can queue early jQuery/GSAP calls (if enabled), and dynamically loads the main player script.
     *   The main player script then restores original animation functions, processes the queue, and handles playback.
-    *   Benefit: Improves handling of early/inline animations and reduces render-blocking JavaScript from the main player on cached views.
 *   **Configurable Detection Mechanisms:** Admin options to enable/disable "Advanced jQuery Detection," "Advanced GSAP Detection," and "CSS Animation/Transition Detection".
-*   **Debug Mode:** Option for detailed console logging from both detector and player scripts.
+*   **Configurable Shunt Script Behavior (New in 2.2.0):**
+    *   **Inline Data Size Threshold:** Set a maximum size (KB) for animation data to be inlined with the shunt script. If exceeded, the plugin falls back to loading the player script externally to prevent HTML bloat.
+    *   **Granular Shunt Interception:** Enable/disable jQuery and GSAP animation interception by the shunt script independently. Useful for resolving conflicts with other early-executing scripts.
+*   **Debug Mode:** Option for detailed console logging from detector, shunt, and player scripts.
 *   **Admin Settings Page:** Easy-to-use interface.
 *   **Manual Cache Control:** "Clear Animation Cache" button.
 
@@ -50,118 +52,105 @@ The plugin provides a comprehensive admin settings page to control lazy loading,
 
 == Configuration ==
 
-(Details for Lazy Loading, Threshold, Advanced Detection, Debug Mode, Clear Cache Button remain largely the same as v2.0.0)
+Navigate to the "Animation Optimizer" settings page in your WordPress admin dashboard. Key settings include:
+
 *   **Enable Lazy Loading of Animations:** (Default: Enabled)
 *   **Lazy Load Trigger Threshold:** (Default: 0.1)
-*   **Enable Advanced jQuery Detection:** (Default: Enabled)
-*   **Enable Advanced GSAP Detection:** (Default: Enabled)
-*   **Enable CSS Animation/Transition Detection (MutationObserver):** (Default: Enabled)
+*   **Enable Advanced jQuery Detection:** (Default: Enabled) For the main detector script.
+*   **Enable Advanced GSAP Detection:** (Default: Enabled) For the main detector script.
+*   **Enable CSS Animation/Transition Detection (MutationObserver):** (Default: Enabled) For the main detector script.
+*   **Inline Data Size Threshold (KB):** (Default: 5 KB, New in 2.2.0) Maximum size for animation data to be inlined with the shunt script. If the JSON-encoded animation data exceeds this, the plugin will load the main player script externally instead of using the inline shunt method. Set to 0 to disable this check (always attempt inline if cache is valid).
+*   **Enable jQuery Interception by Shunt Script:** (Default: Enabled, New in 2.2.0) Allows the early inline shunt script to intercept and queue jQuery animations. Disable if you encounter conflicts with other scripts that modify jQuery behavior very early, or if you prefer jQuery animations not to be shunted.
+*   **Enable GSAP Interception by Shunt Script:** (Default: Enabled, New in 2.2.0) Allows the early inline shunt script to intercept and queue GSAP animations. Disable if you encounter conflicts or prefer GSAP animations not to be shunted.
 *   **Enable Debug Mode:** (Default: Disabled)
 *   **Clear Animation Cache Now Button.**
 
 == How to Use ==
 
-1.  **For Lazy Loading (General):** (Same as v2.0.0)
-    *   Ensure "Enable Lazy Loading" is checked.
-    *   Add class `lha-animation-target` for manual targeting.
-    *   Animations trigger with class `lha-animate-now`.
+(Largely the same as v2.1.0, with the new settings providing more control over the shunt behavior)
 
-2.  **For Automatic Animation Caching & Playback:**
-    *   Ensure relevant detection features are enabled (defaults).
-    *   **Detection Phase (Cache Miss):** `lha-animation-detector.js` runs, detects animations, and sends data for caching.
-    *   **Playback Phase (Cache Hit - New in 2.1.0):**
-        *   A small inline "shunt" script is placed in the `<head>`. This script contains all cached animation data and settings.
-        *   It temporarily intercepts calls to jQuery and GSAP animation functions, queuing them if they occur before the main player loads.
-        *   It then dynamically (asynchronously) loads the main player script (`lha-animation-optimizer-public.js`).
-        *   Once the main player script loads, it restores the original jQuery/GSAP functions, processes any animations that were queued by the shunt, and then initializes all cached animations for lazy-loaded playback.
-    *   Elements with detected animations are automatically treated as `lha-animation-target`s by the player.
+1.  **For Lazy Loading (General):** (Same as v2.1.0)
+2.  **For Automatic Animation Caching & Playback:** (Same as v2.1.0, but now influenced by shunt data size and interception settings)
 
 == Frequently Asked Questions ==
 
-= How does lazy loading work? = (Same as v2.0.0)
+= How does lazy loading work? = (Same as v2.1.0)
 
-= How does Automatic Animation Caching work? (Updated for 2.1.0) =
-On a user's first visit (or after the cache is cleared), `lha-animation-detector.js` loads. It wraps jQuery/GSAP methods and uses a `MutationObserver` to detect various animations, sending this data to be cached.
+= How does Automatic Animation Caching work? (Updated for 2.2.0) =
+(Largely the same as v2.1.0, but mention the new controls)
+The process is similar to version 2.1.0. The key difference is that the behavior of the inline "shunt" script is now more configurable:
+*   **Data Size Check:** If the total size of cached animation data exceeds the "Inline Data Size Threshold" (default 5KB), the plugin will skip the inline shunt method and load the player script externally, similar to how it behaves when the cache is invalid. This prevents overly large inline scripts in the HTML head. A threshold of 0 disables this check.
+*   **Shunt Interception Control:** You can now enable or disable the shunt script's ability to intercept jQuery and GSAP animations independently. If you disable interception for a library, animations from that library will execute normally when they are called, even if very early, and won't be queued by the shunt.
 
-On subsequent page views with a valid cache:
-1.  A very small **inline "shunt" script** is embedded directly into the HTML `<head>`. This script includes:
-    *   All the cached animation data (`window.lhaPreloadedAnimations`).
-    *   Plugin settings for the player (`window.lhaPreloadedSettings`).
-    *   The URL of the main player script.
-2.  The shunt script immediately:
-    *   Sets up a queue (`window.lhaEarlyAnimationQueue`) for any animation calls that happen very early.
-    *   Temporarily replaces (shunts) common jQuery and GSAP animation functions. If these functions are called by other scripts before the main player is ready, their details are put into the queue instead of executing immediately.
-    *   Dynamically loads the main player script (`lha-animation-optimizer-public.js`) asynchronously.
-3.  Once the main player script loads, it:
-    *   Restores the original jQuery and GSAP functions that were shunted.
-    *   Processes all animation calls from the `lhaEarlyAnimationQueue`, executing them with the now-restored original functions.
-    *   Initializes all other cached animations, preparing them for lazy-loaded playback as usual.
-This two-step process ensures that the initial page has minimal script impact while still capturing and managing animations that might fire very early.
+= What happens if my page has a huge amount of animation data? =
+The "Inline Data Size Threshold (KB)" setting (default 5KB) helps manage this. If your cached animation data (when converted to JSON for inlining) is larger than this threshold, the plugin will automatically fall back to loading the main player script externally (like `lha-animation-optimizer-public.js`) instead of inlining the data and the shunt script. This prevents the initial HTML page from becoming too large due to extensive inline JavaScript. You can adjust this threshold or set it to 0 to always attempt inlining (if the cache is valid).
+
+= Some animations seem to conflict with the plugin, especially very early ones. What can I try? =
+This plugin's two-step loading mechanism (inline shunt script + main player) is designed to handle early animations better. However, conflicts can still occur.
+1.  **Try Disabling Shunt Interception:** Go to Animation Optimizer settings and uncheck "Enable jQuery Interception by Shunt Script" or "Enable GSAP Interception by Shunt Script" (or both). This stops the very early inline script from modifying jQuery/GSAP functions. Animations will then run as they normally would, without being queued by the shunt. The main player script will still use cached data for lazy loading if available.
+2.  **Disable Main Detection Features:** If the issue persists or is related to how animations are detected, try disabling "Advanced jQuery Detection," "Advanced GSAP Detection," or "CSS Animation/Transition Detection" in the plugin settings. This will reduce what the plugin tries to cache.
+3.  **Enable Debug Mode:** This will provide detailed logs in your browser's console from the plugin's scripts, which can help identify what the plugin is doing and where a conflict might arise.
+4.  **Clear Cache:** Always clear the plugin's animation cache and any server/browser caches after changing settings.
 
 = What types of animations can the plugin now detect? = (Same as v2.0.0)
-*   jQuery: `.animate()`, `fadeIn`, `fadeOut`, `slideUp`, `slideDown`, `slideToggle`, `fadeTo`, `fadeToggle`.
-*   GSAP: `gsap.to()`, `gsap.fromTo()`, tweens added via `Timeline.prototype.add`, "fromTo" states, stagger.
-*   CSS Keyframe Animations and CSS Transitions.
-
 = How does the CSS Animation/Transition detection work? = (Same as v2.0.0)
-
 = What are the 'Advanced jQuery/GSAP Detection' settings for? = (Same as v2.0.0)
-
-= What is Debug Mode and how do I use it? (Updated for 2.1.0) =
-When enabled, both the `lha-animation-detector.js` (on detection runs) and the `lha-animation-optimizer-public.js` (player script, especially when processing shunt queue or preloaded data) will output detailed logs to the browser console. This helps trace the entire lifecycle from detection to shunt to playback.
-
+= What is Debug Mode and how do I use it? = (Updated for 2.1.0, still relevant)
 = What should I do if an animation isn't detected? = (Same as v2.0.0)
 
 == Performance Considerations ==
-
-*   **Shunt Script Size:** The inline shunt script's own JavaScript code is very small (manually minified, it's approx 1.1KB, gzipped to **<0.5KB**).
-*   **Cached Data Size:** The main variable part of the inline script's size is the JSON data for `window.lhaPreloadedAnimations` (the cached animation details) and `window.lhaPreloadedSettings`. For sites with many complex animations, this JSON data can increase the size of the inline script. However, this is generally still more performant than loading the full detector script and re-detecting animations on every page load.
-*   The main player script is loaded asynchronously/deferred when the shunt is active, minimizing its impact on initial page rendering.
+(Updated for 2.2.0)
+*   **Shunt Script Size:** The inline shunt script's JavaScript code is minimal (gzipped to <0.5KB).
+*   **Cached Data Size & Threshold:** The primary variable part of the inline script is the JSON data for cached animations. The "Inline Data Size Threshold" setting now controls whether this data is inlined or if the plugin falls back to an external script load to prevent HTML bloat.
+*   The main player script is loaded asynchronously/deferred when the shunt is active.
 
 == Screenshots ==
-
-1.  The LHA Animation Optimizer settings page in the WordPress admin area, showing general and advanced detection settings.
+1.  The LHA Animation Optimizer settings page in the WordPress admin area, showing general, advanced detection, and shunt control settings.
 
 == Changelog ==
 
-= 2.1.0 (YYYY-MM-DD) =
-*   **NEW:** Introduced a two-step loading mechanism for cached animation playback.
-    *   When cache is valid, a minimal inline "shunt" script (`lha-inline-shunt-logic.js` / `.min.js`) is injected into `wp_head`.
-    *   The shunt script holds preloaded animation data/settings, intercepts early jQuery/GSAP calls by queuing them, and dynamically loads the main player script.
-    *   The main player script (`lha-animation-optimizer-public.js`) now restores original animation functions, processes the early animation queue, then initializes cached animations and lazy loading.
-*   **ENHANCEMENT:** Minified the inline shunt script and implemented loading of `.min.js` or `.js` based on `SCRIPT_DEBUG` in PHP.
-*   **ENHANCEMENT:** Added more detailed debug logging to both the shunt script and the main player script to trace the new loading and execution flow.
-*   **DOCUMENTATION:** Updated `readme.txt` and inline code comments to reflect the Phase 3 two-step loading architecture.
+= 2.2.0 (YYYY-MM-DD) =
+*   **NEW:** Added "Inline Data Size Threshold (KB)" setting to control whether cached animation data is inlined with the shunt script or if an external player script is used as a fallback for large datasets. (Default: 5KB, 0 disables check).
+*   **NEW:** Added admin settings for "Enable jQuery Interception by Shunt Script" and "Enable GSAP Interception by Shunt Script" to granularly control the shunt's behavior (Default: Enabled).
+*   **ENHANCEMENT:** Shunt script (`lha-inline-shunt-logic.js`) now conditionally wraps jQuery/GSAP methods based on the new admin settings.
+*   **ENHANCEMENT:** PHP logic in `class-lha-animation-optimizer-public.php` updated to implement the data size check and pass new interception settings to the shunt script.
+*   **DOCUMENTATION:** Updated `readme.txt` and inline code comments for Phase 4 features.
+
+= 2.1.0 =
+*   NEW: Introduced a two-step loading mechanism for cached animation playback using an inline "shunt" script.
+*   ENHANCEMENT: Minified the inline shunt script and implemented loading of `.min.js` or `.js` based on `SCRIPT_DEBUG` (Note: This SCRIPT_DEBUG behavior for shunt was later changed in 2.2.0 to always prioritize .min.js).
+*   ENHANCEMENT: Added detailed debug logging to shunt and player scripts.
+*   DOCUMENTATION: Updated readme and inline comments for Phase 3.
 
 = 2.0.0 =
-*   NEW: Comprehensive Animation Detection & Caching Overhaul (jQuery specific methods, GSAP Timeline.add, CSS Animations/Transitions via MutationObserver).
-*   NEW: Configurable Detection Mechanisms (toggles for advanced jQuery, GSAP, CSS detection).
+*   NEW: Comprehensive Animation Detection & Caching Overhaul.
+*   NEW: Configurable Detection Mechanisms.
 *   NEW: Debug Mode for detector script.
 *   ENHANCEMENT: Player script updated for new animation types.
-*   ENHANCEMENT: Admin panel updates for new settings and reliable cache invalidation.
+*   ENHANCEMENT: Admin panel updates and reliable cache invalidation.
 *   ENHANCEMENT: Performance refinements in detector script.
-*   DOCUMENTATION: Major updates to readme and inline comments.
 
 = 1.1.0 =
-*   NEW: Implemented Automatic Animation Caching for jQuery (`.animate()`) and GSAP animations.
-*   NEW: Added "Clear Animation Cache" button.
+*   NEW: Automatic Animation Caching for jQuery (`.animate()`) and GSAP.
+*   NEW: "Clear Animation Cache" button.
 *   ENHANCEMENT: Cache version updated on settings save.
-*   ENHANCEMENT: Improved sanitization and selector generation.
-*   REFACTOR: Consolidated public script enqueuing.
 
 = 1.0.0 =
 *   Initial release.
 
 == Upgrade Notice ==
 
+= 2.2.0 =
+This version adds more control over the inline shunt script behavior, including a data size threshold to prevent excessive inline script size and options to disable jQuery/GSAP interception by the shunt if needed for compatibility. The shunt script now always attempts to load the minified version first, falling back to the non-minified if necessary, regardless of SCRIPT_DEBUG.
+
 = 2.1.0 =
 This version introduces an optimized two-step loading mechanism for cached animations using an inline "shunt" script. This should improve the handling of animations that fire very early in the page load and further reduce the initial script footprint on cached views. Debug mode has also been enhanced.
 
 = 2.0.0 =
-This is a major update that significantly expands the plugin's animation detection capabilities to include more jQuery methods, more GSAP scenarios, and CSS animations/transitions. It also introduces new admin settings for finer control over detection and a debug mode. Please review the new configuration options and test your site's animations after updating.
+This is a major update that significantly expands the plugin's animation detection capabilities. Please review the new configuration options.
 
 == Known Limitations/Considerations ==
-(Same as v2.0.0, but the new loading mechanism aims to mitigate some timing issues for early animations)
+(Same as v2.1.0)
 *   **Detection Accuracy:** Highly complex or unusually coded JS animations, or very intricate CSS interactions might not be fully captured.
 *   **Performance Trade-offs:** MutationObserver for CSS detection can be resource-intensive on highly dynamic sites.
 *   **Complex Callbacks/Logic:** Callbacks within JS animations are not replicated.
