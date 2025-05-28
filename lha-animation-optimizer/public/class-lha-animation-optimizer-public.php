@@ -118,6 +118,30 @@ class Public_Script_Manager {
 
 		wp_localize_script( $this->plugin_name, 'lhaAnimationOptimizerSettings', $script_data );
 
+		// Enqueue GSAP detector script
+		wp_enqueue_script(
+			'lha-optimizer-gsap-detector', // New handle for the GSAP detector script
+			plugin_dir_url( __FILE__ ) . 'js/lha-animation-optimizer-gsap-detector.js',
+			array(), // No jQuery dependency for the provided GSAP detector script
+			$this->version,
+			true // Load in footer
+		);
+
+		// Create nonce for GSAP logging
+		$gsap_log_nonce = wp_create_nonce('lha_gsap_log_nonce');
+
+		// Localize settings for the GSAP detector script
+		wp_localize_script(
+			'lha-optimizer-gsap-detector',
+			'lhaAnimationOptimizerGSAPSettings',
+			array(
+				'nonce' => $gsap_log_nonce,
+				// 'ajax_url' is already globally available in WordPress admin context,
+				// and the GSAP detector uses the global 'ajaxurl'.
+				// 'gsapVersion' => null, // Placeholder if we add version detection later
+			)
+		);
+
 	}
 
 }

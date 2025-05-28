@@ -79,6 +79,10 @@ class Settings_Manager {
 		add_action('wp_ajax_lha_unignore_animation', [ $this, 'handle_unignore_animation_ajax' ]);
 		add_action('wp_ajax_lha_bulk_apply_optimizations', [ $this, 'handle_bulk_apply_optimizations_ajax' ]);
 
+		// AJAX hooks for GSAP animation logging
+		add_action('wp_ajax_nopriv_lha_log_gsap_animation', [ $this, 'handle_log_gsap_animation_ajax' ]);
+		add_action('wp_ajax_lha_log_gsap_animation', [ $this, 'handle_log_gsap_animation_ajax' ]);
+
 	}
 
 	/**
@@ -192,7 +196,8 @@ class Settings_Manager {
 						<tr>
 							<th scope="col" class="manage-column column-cb check-column"><input type="checkbox" id="lha-select-all-animations" /></th>
 							<th scope="col"><?php echo esc_html__( 'Selector', 'lha-animation-optimizer' ); ?></th>
-							<th scope="col" style="width: 20%;"><?php echo esc_html__( 'Properties', 'lha-animation-optimizer' ); ?></th>
+							<th scope="col"><?php echo esc_html__( 'Type', 'lha-animation-optimizer' ); ?></th>
+							<th scope="col" style="width: 25%;"><?php echo esc_html__( 'Properties / Details', 'lha-animation-optimizer' ); ?></th>
 							<th scope="col"><?php echo esc_html__( 'Duration', 'lha-animation-optimizer' ); ?></th>
 							<th scope="col"><?php echo esc_html__( 'Easing', 'lha-animation-optimizer' ); ?></th>
 							<th scope="col"><?php echo esc_html__( 'Count', 'lha-animation-optimizer' ); ?></th>
@@ -207,16 +212,33 @@ class Settings_Manager {
 							<?php
 								// Ensure all expected keys exist to avoid notices
 								$selector = isset( $animation['selector'] ) ? $animation['selector'] : 'N/A';
+								$animation_type = isset( $animation['animation_type'] ) ? $animation['animation_type'] : 'jquery'; // Default to jquery
+								
 								$properties_json = isset( $animation['properties'] ) ? $animation['properties'] : '{}';
 								$properties_array = json_decode( $properties_json, true );
 								$properties_display = '';
+
 								if ( json_last_error() === JSON_ERROR_NONE && is_array($properties_array) ) {
 									foreach ( $properties_array as $key => $value ) {
-										$properties_display .= esc_html( $key ) . ': ' . esc_html( $value ) . '; ';
+										$properties_display .= '<strong>' . esc_html( $key ) . ':</strong> ' . esc_html( $value ) . '; ';
 									}
+									$properties_display = rtrim( $properties_display, '; ' );
 								} else {
 									$properties_display = esc_html( $properties_json );
 								}
+
+								if ( $animation_type === 'gsap' && ! empty( $animation['gsap_details'] ) && is_array( $animation['gsap_details'] ) ) {
+									$properties_display .= '<br><hr><strong>GSAP Details:</strong><br>';
+									foreach ( $animation['gsap_details'] as $key => $value ) {
+										if ( is_array( $value ) ) { // e.g. from_properties could be an array/object itself
+											$value_display = wp_json_encode( $value, JSON_PRETTY_PRINT );
+											$properties_display .= '<strong>' . esc_html( ucfirst( str_replace( '_', ' ', $key ) ) ) . ':</strong> <pre style="white-space: pre-wrap; word-break: break-all; background: #f9f9f9; padding: 5px; border-radius: 3px;">' . esc_html( $value_display ) . '</pre> ';
+										} else if ($value !== null && $value !== '') {
+											$properties_display .= '<strong>' . esc_html( ucfirst( str_replace( '_', ' ', $key ) ) ) . ':</strong> ' . esc_html( $value ) . '<br>';
+										}
+									}
+								}
+
 
 								$duration = isset( $animation['duration'] ) ? $animation['duration'] : 'N/A';
 								$easing = isset( $animation['easing'] ) ? $animation['easing'] : 'N/A';
@@ -231,7 +253,8 @@ class Settings_Manager {
 									<input type="checkbox" name="log_ids[]" class="lha-bulk-select-checkbox" value="<?php echo esc_attr( $current_log_id ); ?>" />
 								</th>
 								<td><?php echo esc_html( $selector ); ?></td>
-								<td><small><?php echo wp_kses_post( rtrim($properties_display, '; ') ); // Using wp_kses_post for ; as it's part of style attribute like values ?></small></td>
+								<td><?php echo esc_html( ucfirst( $animation_type ) ); ?></td>
+								<td><small><?php echo wp_kses_post( $properties_display ); ?></small></td>
 								<td><?php echo esc_html( $duration ); ?></td>
 								<td><?php echo esc_html( $easing ); ?></td>
 								<td><?php echo esc_html( $count ); ?></td>
@@ -243,13 +266,21 @@ class Settings_Manager {
 									</span>
 								</td>
 								<td class="lha-actions-cell">
-									<?php if ( $current_status === 'detected' ) : ?>
-										<button class="button button-primary lha-action-button" data-action="apply" data-log-id="<?php echo esc_attr( $log_id ); ?>"><?php echo esc_html__( 'Apply', 'lha-animation-optimizer' ); ?></button>
-										<button class="button lha-action-button" data-action="ignore" data-log-id="<?php echo esc_attr( $log_id ); ?>"><?php echo esc_html__( 'Ignore', 'lha-animation-optimizer' ); ?></button>
-									<?php elseif ( $current_status === 'applied' ) : ?>
-										<button class="button lha-action-button" data-action="deactivate" data-log-id="<?php echo esc_attr( $log_id ); ?>"><?php echo esc_html__( 'Deactivate', 'lha-animation-optimizer' ); ?></button>
-									<?php elseif ( $current_status === 'ignored' ) : ?>
-										<button class="button lha-action-button" data-action="unignore" data-log-id="<?php echo esc_attr( $log_id ); ?>"><?php echo esc_html__( 'Unignore', 'lha-animation-optimizer' ); ?></button>
+									<?php if ( $animation_type === 'gsap' ) : ?>
+										<?php if ( $current_status === 'ignored' ) : ?>
+											<button class="button lha-action-button" data-action="unignore" data-log-id="<?php echo esc_attr( $current_log_id ); ?>"><?php echo esc_html__( 'Unignore', 'lha-animation-optimizer' ); ?></button>
+										<?php else : // 'detected' or 'applied' (though 'applied' shouldn't happen for GSAP yet) ?>
+											<button class="button lha-action-button" data-action="ignore" data-log-id="<?php echo esc_attr( $current_log_id ); ?>"><?php echo esc_html__( 'Ignore', 'lha-animation-optimizer' ); ?></button>
+										<?php endif; ?>
+									<?php else : // jQuery or other types ?>
+										<?php if ( $current_status === 'detected' ) : ?>
+											<button class="button button-primary lha-action-button" data-action="apply" data-log-id="<?php echo esc_attr( $current_log_id ); ?>"><?php echo esc_html__( 'Apply', 'lha-animation-optimizer' ); ?></button>
+											<button class="button lha-action-button" data-action="ignore" data-log-id="<?php echo esc_attr( $current_log_id ); ?>"><?php echo esc_html__( 'Ignore', 'lha-animation-optimizer' ); ?></button>
+										<?php elseif ( $current_status === 'applied' ) : ?>
+											<button class="button lha-action-button" data-action="deactivate" data-log-id="<?php echo esc_attr( $current_log_id ); ?>"><?php echo esc_html__( 'Deactivate', 'lha-animation-optimizer' ); ?></button>
+										<?php elseif ( $current_status === 'ignored' ) : ?>
+											<button class="button lha-action-button" data-action="unignore" data-log-id="<?php echo esc_attr( $current_log_id ); ?>"><?php echo esc_html__( 'Unignore', 'lha-animation-optimizer' ); ?></button>
+										<?php endif; ?>
 									<?php endif; ?>
 								</td>
 							</tr>
@@ -598,30 +629,69 @@ class Settings_Manager {
 	 */
 	public function store_detected_animation_data( $animation_data ) {
 		// Basic validation of incoming data
-		if ( empty( $animation_data['selector'] ) || empty( $animation_data['properties'] ) ) {
-			// error_log( 'LHA Error: Selector or properties missing in detected animation data.' );
-			return; // Or handle error more formally
+		if ( empty( $animation_data['selector'] ) || ( empty( $animation_data['properties'] ) && $animation_data['type'] !== 'gsap' ) ) {
+			// error_log('LHA Error: Selector or properties missing in detected animation data.');
+			return false; // Or handle error more formally
 		}
 
-		// Sanitize incoming data
+		// Sanitize common data
 		$selector = sanitize_text_field( $animation_data['selector'] );
-		// Properties can be complex, assume JSON string for now, ensure it's valid
-		$properties_json = is_string($animation_data['properties']) ? $animation_data['properties'] : wp_json_encode( $animation_data['properties'] );
-		if ( ! json_decode( $properties_json ) ) {
-			// error_log( 'LHA Error: Invalid JSON properties string.' );
-			return;
-		}
-		$properties = wp_kses_post( $properties_json ); // Kses for safety, though JSON structure itself needs validation
-
-		$duration = isset( $animation_data['duration'] ) ? (is_numeric( $animation_data['duration'] ) ? intval( $animation_data['duration'] ) : sanitize_text_field( $animation_data['duration'] ) ) : 'unknown';
-		$easing = isset( $animation_data['easing'] ) ? sanitize_text_field( $animation_data['easing'] ) : 'unknown';
 		$source_url = isset( $animation_data['source_url'] ) ? esc_url_raw( $animation_data['source_url'] ) : '';
 		$current_time = current_time( 'mysql' );
+		$animation_type = isset($animation_data['type']) ? sanitize_text_field($animation_data['type']) : 'unknown'; // 'jquery' or 'gsap'
 
-		// Generate log_id: simple approach - hash of selector and properties (json string)
-		// More robust might involve specific property keys if properties order can change.
-		$log_id_string = $selector . ':' . $properties;
-		$log_id = 'lha-' . md5( $log_id_string );
+		// Initialize variables for log_id generation and data storage
+		$log_id_parts = array( 'selector' => $selector, 'type' => $animation_type );
+		$storage_data = array(
+			'selector'            => $selector,
+			'source_url'          => $source_url,
+			'animation_type'      => $animation_type,
+		);
+
+		if ($animation_type === 'gsap') {
+			// GSAP specific data handling
+			$gsap_type = isset($animation_data['gsap_type']) ? sanitize_text_field($animation_data['gsap_type']) : 'unknown';
+			// Properties for GSAP are already stringified JSON by the detector
+			$properties_json = isset($animation_data['properties']) ? wp_kses_post(stripslashes($animation_data['properties'])) : '{}';
+			// from_properties for GSAP are also stringified JSON
+			$from_properties_json = isset($animation_data['from_properties']) ? wp_kses_post(stripslashes($animation_data['from_properties'])) : null;
+			$position = isset($animation_data['position']) ? sanitize_text_field($animation_data['position']) : null;
+
+			$storage_data['gsap_details'] = array(
+				'gsap_type'       => $gsap_type,
+				'from_properties' => $from_properties_json,
+				'position'        => $position,
+			);
+			$storage_data['properties'] = $properties_json; // Main target properties
+			$storage_data['duration'] = isset( $animation_data['duration'] ) ? sanitize_text_field( $animation_data['duration'] ) : 'auto'; // GSAP often uses 'auto'
+			$storage_data['easing'] = isset( $animation_data['ease'] ) ? sanitize_text_field( $animation_data['ease'] ) : 'power1.out'; // GSAP default
+
+			$log_id_parts['gsap_type'] = $gsap_type;
+			$log_id_parts['properties'] = $properties_json; // Use the JSON string for hashing
+			if ($from_properties_json) {
+				$log_id_parts['from_properties'] = $from_properties_json;
+			}
+
+		} else { // Assuming jQuery or other types if not GSAP
+			// Properties can be complex, assume JSON string for now, ensure it's valid
+			$properties_json = is_string($animation_data['properties']) ? $animation_data['properties'] : wp_json_encode( $animation_data['properties'] );
+			if ( ! json_decode( $properties_json ) ) {
+				// error_log( 'LHA Error: Invalid JSON properties string for jQuery.' );
+				return false;
+			}
+			$storage_data['properties'] = wp_kses_post( $properties_json );
+			$storage_data['duration'] = isset( $animation_data['duration'] ) ? (is_numeric( $animation_data['duration'] ) ? intval( $animation_data['duration'] ) : sanitize_text_field( $animation_data['duration'] ) ) : 'unknown';
+			$storage_data['easing'] = isset( $animation_data['easing'] ) ? sanitize_text_field( $animation_data['easing'] ) : 'unknown';
+			
+			$log_id_parts['properties'] = $storage_data['properties'];
+		}
+
+		// Generate log_id: hash of selector, type, and relevant properties string
+		// Using ksort to ensure consistent order of keys in log_id_parts for hashing
+		ksort($log_id_parts);
+		$log_id_string = http_build_query($log_id_parts); // Build a query string for consistent hashing
+		$log_id = $animation_type . '-' . md5( $log_id_string );
+
 
 		$detected_animations = get_option( 'lha_detected_animations', array() );
 
@@ -630,41 +700,86 @@ class Settings_Manager {
 			$existing_entry = $detected_animations[ $log_id ];
 			$existing_entry['last_detected_time'] = $current_time;
 			$existing_entry['detection_count'] = isset( $existing_entry['detection_count'] ) ? ( $existing_entry['detection_count'] + 1 ) : 1;
-			$existing_entry['source_url'] = $source_url; // Update source URL in case it changes
+			$existing_entry['source_url'] = $storage_data['source_url']; // Update source URL
 
 			// Preserve status if 'applied' or 'ignored'
 			if ( ! in_array( $existing_entry['status'], array( 'applied', 'ignored' ), true ) ) {
 				$existing_entry['status'] = 'detected';
 			}
-			// Ensure all fields are present, even if updating an older entry
-			$existing_entry['selector'] = $selector;
-			$existing_entry['properties'] = $properties;
-			$existing_entry['duration'] = $duration;
-			$existing_entry['easing'] = $easing;
-
+			// Update other fields that might change
+			$existing_entry['properties'] = $storage_data['properties'];
+			$existing_entry['duration'] = $storage_data['duration'];
+			$existing_entry['easing'] = $storage_data['easing'];
+			if ($animation_type === 'gsap' && isset($storage_data['gsap_details'])) {
+				$existing_entry['gsap_details'] = $storage_data['gsap_details'];
+			}
+			$existing_entry['animation_type'] = $animation_type; // Ensure type is updated if it somehow changed for same log_id (unlikely)
 
 			$detected_animations[ $log_id ] = $existing_entry;
 		} else {
 			// New entry
-			$detected_animations[ $log_id ] = array(
+			$new_entry = array(
 				'log_id'                => $log_id,
-				'selector'              => $selector,
-				'properties'            => $properties, // Stored as JSON string
-				'duration'              => $duration,
-				'easing'                => $easing,
-				'source_url'            => $source_url,
+				'selector'              => $storage_data['selector'],
+				'properties'            => $storage_data['properties'],
+				'duration'              => $storage_data['duration'],
+				'easing'                => $storage_data['easing'],
+				'source_url'            => $storage_data['source_url'],
 				'first_detected_time'   => $current_time,
 				'last_detected_time'    => $current_time,
 				'detection_count'       => 1,
 				'status'                => 'detected',
+				'animation_type'        => $animation_type,
 			);
+			if ($animation_type === 'gsap' && isset($storage_data['gsap_details'])) {
+				$new_entry['gsap_details'] = $storage_data['gsap_details'];
+			}
+			$detected_animations[ $log_id ] = $new_entry;
 		}
 
 		update_option( 'lha_detected_animations', $detected_animations );
+		return true;
 	}
 
 	/**
-	 * Handles bulk applying animation optimizations via AJAX (Placeholder).
+	 * Handles logging GSAP animation data via AJAX.
+	 *
+	 * @since 1.0.0
+	 */
+	public function handle_log_gsap_animation_ajax() {
+		check_ajax_referer('lha_gsap_log_nonce', 'nonce');
+
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash
+		$animation_data_json = isset($_POST['animation_data']) ? stripslashes($_POST['animation_data']) : null;
+
+		if (empty($animation_data_json)) {
+			wp_send_json_error(array('message' => __('No animation data received.', 'lha-animation-optimizer')), 400);
+			wp_die();
+		}
+
+		$animation_data_array = json_decode($animation_data_json, true);
+
+		if (json_last_error() !== JSON_ERROR_NONE || !is_array($animation_data_array)) {
+			wp_send_json_error(array('message' => __('Invalid animation data format.', 'lha-animation-optimizer')), 400);
+			wp_die();
+		}
+		
+		// Ensure type is set for storage logic
+		if (!isset($animation_data_array['type'])) {
+			$animation_data_array['type'] = 'gsap'; // Assume GSAP if coming through this handler
+		}
+
+
+		if ($this->store_detected_animation_data($animation_data_array)) {
+			wp_send_json_success(array('message' => __('GSAP animation data logged successfully.', 'lha-animation-optimizer')));
+		} else {
+			wp_send_json_error(array('message' => __('Failed to store GSAP animation data.', 'lha-animation-optimizer')), 500);
+		}
+		wp_die();
+	}
+
+	/**
+	 * Handles bulk applying animation optimizations via AJAX.
 	 *
 	 * @since 1.0.0
 	 */
