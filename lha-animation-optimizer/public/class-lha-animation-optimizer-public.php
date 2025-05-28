@@ -82,98 +82,132 @@ class Public_Script_Manager {
 	 */
 	public function enqueue_scripts() {
 		// Define handles for the public-facing scripts.
-		$public_script_handle = $this->plugin_name; // Main public script (player/lazy-loader)
-		$detector_script_handle = $this->plugin_name . '-detector'; // Animation detector script
+		$player_script_handle = $this->plugin_name . '-player'; // Renamed for clarity, was $this->plugin_name
+		$detector_script_handle = $this->plugin_name . '-detector';
 
 		// Retrieve animation cache metadata.
-		// `lha_animation_cache_version` stores a timestamp indicating when the cache was last considered fresh.
 		$animation_cache_version = get_option( 'lha_animation_cache_version' );
-		// `lha_detected_animations_data` stores the array of detected animation objects.
-		$detected_animations_data = get_option( 'lha_detected_animations_data' );
+		$detected_animations_data = get_option( 'lha_detected_animations_data', false ); // Default to false if not found
 
 		// Determine if the animation cache is considered valid.
-		// Cache is valid if data exists (even an empty array, meaning no animations were detected)
-		// and a cache version is set.
-		$is_cache_valid = ( false !== $detected_animations_data ) && ! empty( $animation_cache_version );
-		// Note: `empty([])` is false. `get_option` returns `false` if option not found.
-		// So, `false !== $detected_animations_data` ensures the option exists.
+		$is_cache_valid = ( false !== $detected_animations_data && ! empty( $animation_cache_version ) );
 
-		// Retrieve general plugin settings (lazy load toggle, threshold).
-		$options = get_option( $this->plugin_name . '_options', array() ); // Admin-configurable options.
-		$default_settings = array(
-			'lazyLoadAnimations'            => true, // Default: lazy loading enabled.
-			'intersectionObserverThreshold' => 0.1,  // Default: 10% visibility triggers animation.
-		);
-		$lazy_load_animations = isset( $options['lazy_load_animations'] ) ? (bool) $options['lazy_load_animations'] : $default_settings['lazyLoadAnimations'];
-		$intersection_observer_threshold = isset( $options['intersection_observer_threshold'] ) ? (float) $options['intersection_observer_threshold'] : $default_settings['intersectionObserverThreshold'];
+		// Retrieve all plugin options.
+		$options = get_option( $this->plugin_name . '_options', array() );
 
-		// Prepare data for localization, common to the public script.
-		$public_settings_data = array(
-			'ajax_url'                      => admin_url( 'admin-ajax.php' ), // For potential future AJAX needs in public script.
-			'lazyLoadAnimations'            => $lazy_load_animations,
-			'intersectionObserverThreshold' => $intersection_observer_threshold,
-		);
-
-		// Always enqueue the main public script (lha-animation-optimizer-public.js).
-		// This script handles lazy loading and, if cache is valid, animation playback.
-		wp_enqueue_script(
-			$public_script_handle,
-			plugin_dir_url( __FILE__ ) . 'js/lha-animation-optimizer-public.js',
-			array( 'jquery' ), // jQuery as a dependency (used by public script, and detector).
-			$this->version,
-			true // Load in footer.
+		// Prepare settings data for player/detector scripts.
+		$player_settings = array(
+			'lazyLoadAnimations'            => isset( $options['lazy_load_animations'] ) ? (bool) $options['lazy_load_animations'] : true,
+			'intersectionObserverThreshold' => isset( $options['intersection_observer_threshold'] ) ? (float) $options['intersection_observer_threshold'] : 0.1,
+			'debugMode'                     => isset( $options['enable_debug_mode'] ) ? (bool) $options['enable_debug_mode'] : false, // Player also gets debugMode
+			'animationTriggerClass'         => 'lha-animate-now', // Default, could be made a setting later
 		);
 
 		if ( $is_cache_valid ) {
-			// Cache is valid: Provide settings and cached animation data to the public script.
-			// The public script will then act as a player for these animations.
-			$localized_data = array(
-				'settings'         => $public_settings_data,
-				'cachedAnimations' => $detected_animations_data, // Pass the array of detected animation objects.
-			);
-			wp_localize_script( $public_script_handle, 'lhaPluginData', $localized_data );
+			// Cache is valid: Use the inline shunt + dynamic loading for the player script.
+			$player_script_url = plugin_dir_url( __FILE__ ) . 'js/lha-animation-optimizer-public.js';
+			
+			$is_debug = defined( 'SCRIPT_DEBUG' ) && SCRIPT_DEBUG;
+			$shunt_script_filename = $is_debug ? 'js/lha-inline-shunt-logic.js' : 'js/lha-inline-shunt-logic.min.js';
+			$shunt_script_path = plugin_dir_path( __FILE__ ) . $shunt_script_filename;
+			$shunt_script_content = '';
+
+			if ( file_exists( $shunt_script_path ) && is_readable( $shunt_script_path ) ) {
+				$shunt_script_content = file_get_contents( $shunt_script_path );
+			} elseif ( ! $is_debug && file_exists( plugin_dir_path( __FILE__ ) . 'js/lha-inline-shunt-logic.js' ) ) {
+				// Fallback: If .min.js is missing and SCRIPT_DEBUG is false, try the non-minified version.
+				$shunt_script_content = file_get_contents( plugin_dir_path( __FILE__ ) . 'js/lha-inline-shunt-logic.js' );
+				if ( WP_DEBUG && $shunt_script_content ) { // Log only if content was successfully read
+					error_log( 'LHA Animation Optimizer: Minified shunt script (' . $shunt_script_filename . ') missing or unreadable. Using full version as fallback.' );
+				}
+			}
+
+			if ( ! empty( $shunt_script_content ) ) {
+				$inline_js  = '<script id="lha-inline-shunt-script" type="text/javascript">';
+				$cached_animations = is_array( $detected_animations_data ) ? $detected_animations_data : array();
+				$inline_js .= 'window.lhaPreloadedAnimations = ' . wp_json_encode( $cached_animations ) . ';';
+				$inline_js .= 'window.lhaPreloadedSettings = ' . wp_json_encode( $player_settings ) . ';';
+				$inline_js .= 'window.lhaPlayerScriptUrl = "' . esc_url( $player_script_url ) . '?ver=' . $this->version .'";';
+				$inline_js .= $shunt_script_content;
+				$inline_js .= '</script>';
+
+				add_action(
+					'wp_head',
+					function() use ( $inline_js ) {
+						echo $inline_js;
+					},
+					1 
+				);
+			} else {
+				// Shunt script content could not be loaded, fallback to old method.
+				if ( WP_DEBUG ) {
+					error_log( 'LHA Animation Optimizer: Shunt script could not be loaded from ' . $shunt_script_path . ' (and fallback if applicable). Falling back to standard player script enqueue.' );
+				}
+				$this->enqueue_player_script_fallback( $player_script_handle, $player_settings, $detected_animations_data );
+			}
 
 		} else {
-			// Cache is NOT valid or empty: Enqueue the detector script and localize both scripts.
-			// The detector script will attempt to find animations and send them for caching.
-
-			// 1. Enqueue and localize the detector script (lha-animation-detector.js).
+			// Cache is NOT valid or empty: Enqueue the detector script and the player script externally.
+			
+			// 1. Enqueue and localize the detector script.
 			wp_enqueue_script(
 				$detector_script_handle,
 				plugin_dir_url( __FILE__ ) . 'js/lha-animation-detector.js',
-				array( 'jquery' ), // Detector also uses jQuery (or its own fetch fallback) for AJAX.
+				array( 'jquery' ),
 				$this->version,
-				true // Load in footer.
+				true
 			);
-			// Provide necessary settings for the detector script (AJAX URL, action, nonce, and new feature flags).
 			$detector_script_settings = array(
-				'ajaxUrl'    => admin_url( 'admin-ajax.php' ),
-				'saveAction' => 'lha_save_detected_animations', // AJAX action for saving detected data.
-				'saveNonce'  => wp_create_nonce( 'lha_save_detected_animations_nonce' ), // Nonce for the save action.
-				
-				// --- Phase 2: Detection Control & Debug Settings ---
-				// Retrieve these settings from the main options array ($options).
-				// Provide defaults that match those in `Settings_Manager::initialize_settings` if not found.
-				'enableAdvancedJQueryDetection' => isset( $options['enable_advanced_jquery_detection'] ) ? 
-													(bool) $options['enable_advanced_jquery_detection'] : true,
-				'enableAdvancedGSAPDetection'   => isset( $options['enable_advanced_gsap_detection'] ) ? 
-													(bool) $options['enable_advanced_gsap_detection'] : true,
-				'enableMutationObserver'        => isset( $options['enable_mutation_observer'] ) ? 
-													(bool) $options['enable_mutation_observer'] : true,
-				'debugMode'                     => isset( $options['enable_debug_mode'] ) ? 
-													(bool) $options['enable_debug_mode'] : false,
+				'ajaxUrl'                       => admin_url( 'admin-ajax.php' ),
+				'saveAction'                    => 'lha_save_detected_animations',
+				'saveNonce'                     => wp_create_nonce( 'lha_save_detected_animations_nonce' ),
+				'enableAdvancedJQueryDetection' => isset( $options['enable_advanced_jquery_detection'] ) ? (bool) $options['enable_advanced_jquery_detection'] : true,
+				'enableAdvancedGSAPDetection'   => isset( $options['enable_advanced_gsap_detection'] ) ? (bool) $options['enable_advanced_gsap_detection'] : true,
+				'enableMutationObserver'        => isset( $options['enable_mutation_observer'] ) ? (bool) $options['enable_mutation_observer'] : true,
+				'debugMode'                     => isset( $options['enable_debug_mode'] ) ? (bool) $options['enable_debug_mode'] : false,
 			);
 			wp_localize_script( $detector_script_handle, 'lhaDetectorSettings', $detector_script_settings );
 
-			// 2. Localize the main public script with settings only (no cachedAnimations).
-			// In this scenario, it primarily handles lazy loading for non-JS/manual animations.
-			$public_script_localization = array(
-				'settings' => $public_settings_data,
-				// No 'cachedAnimations' key, as the cache is invalid/empty.
+			// 2. Enqueue and localize the main player script (which will act in a basic mode).
+			wp_enqueue_script(
+				$player_script_handle, // Use the player handle
+				plugin_dir_url( __FILE__ ) . 'js/lha-animation-optimizer-public.js',
+				array( 'jquery' ),
+				$this->version,
+				true
 			);
-			wp_localize_script( $public_script_handle, 'lhaPluginData', $public_script_localization );
+			$player_script_localization = array( // Renamed from $public_script_localization
+				'settings' => $player_settings, // Pass the common player settings
+				// No 'cachedAnimations' key here, as the cache is invalid/empty.
+			);
+			wp_localize_script( $player_script_handle, 'lhaPluginData', $player_script_localization );
 		}
 	}
+	
+	/**
+	 * Fallback method to enqueue the main player script externally with full data localization.
+	 * Used if the inline shunt method fails or if cache is invalid but detector isn't running.
+	 *
+	 * @since 2.0.0
+	 * @param string $handle The script handle for the player.
+	 * @param array  $player_settings Settings for the player.
+	 * @param array|false $cached_animations Detected animation data, or false.
+	 */
+	private function enqueue_player_script_fallback( $handle, $player_settings, $cached_animations ) {
+		wp_enqueue_script(
+			$handle,
+			plugin_dir_url( __FILE__ ) . 'js/lha-animation-optimizer-public.js',
+			array( 'jquery' ),
+			$this->version,
+			true
+		);
+		$localized_data = array(
+			'settings'         => $player_settings,
+			'cachedAnimations' => is_array( $cached_animations ) ? $cached_animations : array(),
+		);
+		wp_localize_script( $handle, 'lhaPluginData', $localized_data );
+	}
+
 
 	/**
 	 * AJAX handler for saving detected animation data sent by lha-animation-detector.js.

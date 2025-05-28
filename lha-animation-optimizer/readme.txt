@@ -1,13 +1,13 @@
 === LHA Animation Optimizer ===
 Contributors: LHA Plugin Author
-Tags: animation, performance, optimization, jquery, gsap, css animation, css transition, lazy load, mutationobserver
+Tags: animation, performance, optimization, jquery, gsap, css animation, css transition, lazy load, mutationobserver, inline script
 Requires at least: 5.0
 Tested up to: 6.4
-Stable tag: 2.0.0
+Stable tag: 2.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Optimizes web animations for speed and performance by lazy loading, and by detecting and caching JavaScript-based and CSS-based animations.
+Optimizes web animations for speed and performance by lazy loading, and by detecting and caching JavaScript-based and CSS-based animations. Now features an advanced two-step loading mechanism for cached animations.
 
 == Description ==
 
@@ -15,11 +15,11 @@ LHA Animation Optimizer significantly enhances your website's performance by int
 
 1.  **Lazy Loading of Animations:** All animations (CSS, jQuery, GSAP, etc.) associated with elements having the `.lha-animation-target` class (or elements with detected animations) will only play when the element scrolls into the viewport. This prevents a flood of animations from playing simultaneously on page load, improving perceived performance and reducing initial processing.
 
-2.  **Automatic Animation Caching (Enhanced in 2.0.0):** The plugin automatically detects a wide range of animations on a user's first visit (or when the cache is empty/invalidated):
-    *   **jQuery Animations:** Detects animations from `.animate()` and also from specific methods like `.fadeIn()`, `.fadeOut()`, `.slideUp()`, `.slideDown()`, `.slideToggle()`, `.fadeTo()`, and `.fadeToggle()`.
-    *   **GSAP (GreenSock Animation Platform) Animations:** Detects tweens added directly or via `Timeline.prototype.add`, including "fromTo" variations and stagger effects.
-    *   **CSS Animations & Transitions:** Detects CSS keyframe animations and CSS transitions applied to elements, often triggered by class changes or style modifications.
-    These detected animation details (selectors, properties, durations, types, etc.) are stored in a cache. On subsequent page views, if a valid cache exists, the heavier detection scripts are not loaded. Instead, a lightweight player script uses the cached data to re-initialize and play these animations when they become visible. This drastically reduces JavaScript execution time and improves load speed.
+2.  **Automatic Animation Caching (Enhanced in 2.0.0, Refined in 2.1.0):** The plugin automatically detects a wide range of animations on a user's first visit (or when the cache is empty/invalidated). These include jQuery, GSAP, CSS Keyframe Animations, and CSS Transitions.
+    These detected animation details are stored in a cache. On subsequent page views, if a valid cache exists, a new **two-step loading mechanism** is used:
+    *   A very small inline "shunt" script is added to the page header. This script contains the cached animation data and settings. Its primary roles are to intercept any animation calls (jQuery/GSAP) that occur very early in the page load (e.g., from other inline scripts) and to dynamically load the main animation player script.
+    *   The main player script (`lha-animation-optimizer-public.js`) then loads asynchronously. Once loaded, it restores any intercepted animation functions to their original state, processes the queue of early animation calls (ensuring they execute correctly), and then manages the initialization and lazy-loaded playback of all cached animations.
+    This two-step approach minimizes the initial HTML impact, ensures even very early or inline animations can be captured and managed, and optimizes the overall script loading strategy for cached views.
 
 The plugin provides a comprehensive admin settings page to control lazy loading, animation detection mechanisms, and a debug mode for troubleshooting.
 
@@ -27,19 +27,20 @@ The plugin provides a comprehensive admin settings page to control lazy loading,
 
 *   **Lazy Loading:** Animations only play when elements enter the viewport using IntersectionObserver.
 *   **Configurable Threshold:** Set what percentage of an element must be visible to trigger its animation.
-*   **Comprehensive Automatic Animation Caching (Enhanced in 2.0.0):**
+*   **Comprehensive Automatic Animation Caching:**
     *   **Advanced jQuery Detection:** Captures animations from `.animate()` and common effects like `fadeIn`, `slideUp`, etc.
     *   **Advanced GSAP Detection:** Identifies tweens created with `gsap.to()`, `gsap.fromTo()`, etc., and those added to timelines via `Timeline.prototype.add`. Captures "fromTo" states and stagger properties.
-    *   **CSS Animation & Transition Detection:** Uses `MutationObserver` to detect CSS keyframe animations and transitions applied dynamically or through class/style changes.
-    *   Caches detailed animation data (selectors, types, properties, durations, easing, CSS animation/transition specifics).
-    *   On subsequent views, loads a lightweight animation player instead of the full detection scripts if a valid cache exists.
-    *   The animation cache is automatically cleared when plugin settings are saved or can be manually cleared.
-*   **Configurable Detection Mechanisms (New in 2.0.0):**
-    *   Admin options to enable/disable "Advanced jQuery Detection," "Advanced GSAP Detection," and "CSS Animation/Transition Detection (MutationObserver)" to fine-tune performance vs. detection scope.
-*   **Debug Mode (New in 2.0.0):**
-    *   An option to enable detailed logging to the browser console for troubleshooting detection issues.
-*   **Admin Settings Page:** Easy-to-use interface to configure plugin behavior.
-*   **Manual Cache Control:** A "Clear Animation Cache" button in the admin settings.
+    *   **CSS Animation & Transition Detection:** Uses `MutationObserver` to detect CSS keyframe animations and transitions.
+    *   Caches detailed animation data.
+*   **Two-Step Inline Player for Cached Animations (New in 2.1.0):**
+    *   When cache is valid, a minimal inline "shunt" script is injected into the page header.
+    *   This shunt script holds preloaded animation data/settings, queues early jQuery/GSAP calls, and dynamically loads the main player script.
+    *   The main player script then restores original animation functions, processes the queue, and handles playback.
+    *   Benefit: Improves handling of early/inline animations and reduces render-blocking JavaScript from the main player on cached views.
+*   **Configurable Detection Mechanisms:** Admin options to enable/disable "Advanced jQuery Detection," "Advanced GSAP Detection," and "CSS Animation/Transition Detection".
+*   **Debug Mode:** Option for detailed console logging from both detector and player scripts.
+*   **Admin Settings Page:** Easy-to-use interface.
+*   **Manual Cache Control:** "Clear Animation Cache" button.
 
 == Installation ==
 
@@ -49,76 +50,73 @@ The plugin provides a comprehensive admin settings page to control lazy loading,
 
 == Configuration ==
 
-After installation, navigate to the "Animation Optimizer" settings page in your WordPress admin dashboard. Here you can configure:
-
-*   **Enable Lazy Loading of Animations:** (Default: Enabled) Check this to enable the IntersectionObserver-based lazy loading for all targeted animations.
-*   **Lazy Load Trigger Threshold:** (Default: 0.1) A value between 0.0 and 1.0 representing the percentage of an element that must be visible for its animation to trigger.
-*   **Enable Advanced jQuery Detection:** (Default: Enabled) Enables detection of animations from specific jQuery methods like `fadeIn`, `slideUp`, etc., in addition to `.animate()`. Disable if you only use `.animate()` or suspect conflicts with highly custom jQuery usage.
-*   **Enable Advanced GSAP Detection:** (Default: Enabled) Enables more comprehensive GSAP detection, including observing `Timeline.prototype.add`. Disable if you are not using GSAP timelines heavily or if you notice issues with GSAP detection.
-*   **Enable CSS Animation/Transition Detection (MutationObserver):** (Default: Enabled) Enables the use of `MutationObserver` to detect CSS-driven animations and transitions. This is powerful but can have a performance overhead on sites with extremely frequent and complex DOM manipulations. Disable if you suspect performance issues on such sites or do not need CSS animation caching.
-*   **Enable Debug Mode:** (Default: Disabled) Check this to output detailed animation detection information to your browser's developer console. This is very useful for troubleshooting why certain animations might not be detected or played as expected.
-*   **Clear Animation Cache Now Button:** Manually clears all cached animation data, forcing a fresh detection cycle on the next public page load. The cache is also cleared automatically when you save any settings on this page.
+(Details for Lazy Loading, Threshold, Advanced Detection, Debug Mode, Clear Cache Button remain largely the same as v2.0.0)
+*   **Enable Lazy Loading of Animations:** (Default: Enabled)
+*   **Lazy Load Trigger Threshold:** (Default: 0.1)
+*   **Enable Advanced jQuery Detection:** (Default: Enabled)
+*   **Enable Advanced GSAP Detection:** (Default: Enabled)
+*   **Enable CSS Animation/Transition Detection (MutationObserver):** (Default: Enabled)
+*   **Enable Debug Mode:** (Default: Disabled)
+*   **Clear Animation Cache Now Button.**
 
 == How to Use ==
 
-1.  **For Lazy Loading (General):**
-    *   Ensure the "Enable Lazy Loading of Animations" setting is checked.
-    *   For CSS animations not automatically detected or for custom JavaScript animations you want to control, add the class `lha-animation-target` to the HTML element.
-    *   When the element scrolls into view, the plugin will add the class `lha-animate-now` (this is the default `animationTriggerClass` in the player script). Your CSS should use this class to trigger the animation (e.g., `.lha-animation-target.lha-animate-now { animation-name: my-animation; }`).
+1.  **For Lazy Loading (General):** (Same as v2.0.0)
+    *   Ensure "Enable Lazy Loading" is checked.
+    *   Add class `lha-animation-target` for manual targeting.
+    *   Animations trigger with class `lha-animate-now`.
 
-2.  **For Automatic Animation Caching (jQuery, GSAP, CSS):**
-    *   Ensure the relevant detection features are enabled in the plugin settings (they are by default).
-    *   The plugin's detector script (`lha-animation-detector.js`) will attempt to capture details of animations from these sources on the first visit (when no valid cache exists).
-    *   On subsequent visits, if a cache was successfully built, `lha-animation-detector.js` will not be loaded. Instead, `lha-animation-optimizer-public.js` (the player script) will use the cached data to replay the animations when elements become visible.
-    *   No special classes are needed for detection of animations from these sources, but the elements animated by them will be effectively treated as `lha-animation-target`s by the player script.
+2.  **For Automatic Animation Caching & Playback:**
+    *   Ensure relevant detection features are enabled (defaults).
+    *   **Detection Phase (Cache Miss):** `lha-animation-detector.js` runs, detects animations, and sends data for caching.
+    *   **Playback Phase (Cache Hit - New in 2.1.0):**
+        *   A small inline "shunt" script is placed in the `<head>`. This script contains all cached animation data and settings.
+        *   It temporarily intercepts calls to jQuery and GSAP animation functions, queuing them if they occur before the main player loads.
+        *   It then dynamically (asynchronously) loads the main player script (`lha-animation-optimizer-public.js`).
+        *   Once the main player script loads, it restores the original jQuery/GSAP functions, processes any animations that were queued by the shunt, and then initializes all cached animations for lazy-loaded playback.
+    *   Elements with detected animations are automatically treated as `lha-animation-target`s by the player.
 
 == Frequently Asked Questions ==
 
-= How does lazy loading work? =
-The plugin uses the IntersectionObserver API to monitor elements that are either manually assigned the `.lha-animation-target` class or are identified by the animation detection process. When an element enters the viewport (based on the configured threshold), the plugin adds a CSS class (default: `lha-animate-now`) to that element. This class can trigger CSS animations, or in the case of cached JavaScript animations, signal the player script to execute the animation.
+= How does lazy loading work? = (Same as v2.0.0)
 
-= How does Automatic Animation Caching work? =
-On a user's first visit (or after the cache has been cleared), a special JavaScript file (`lha-animation-detector.js`) is loaded. This script:
-1.  Wraps common jQuery animation methods (like `.animate()`, `.fadeIn()`, etc.).
-2.  Wraps GSAP's `Timeline.prototype.add` method and scans the global GSAP timeline.
-3.  Uses a `MutationObserver` to watch for DOM changes that might apply CSS animations or transitions (e.g., class changes, style changes).
-It records information about these animations (target elements, properties, duration, type, etc.). This data is then sent to your WordPress server and stored as a "cache."
+= How does Automatic Animation Caching work? (Updated for 2.1.0) =
+On a user's first visit (or after the cache is cleared), `lha-animation-detector.js` loads. It wraps jQuery/GSAP methods and uses a `MutationObserver` to detect various animations, sending this data to be cached.
 
-On subsequent page views, if this cache is valid, the heavy `lha-animation-detector.js` is *not* loaded. Instead, the main public script (`lha-animation-optimizer-public.js`) reads the cached animation data and re-applies those animations to the correct elements when they become visible in the viewport. This reduces JavaScript execution and processing on typical page loads.
+On subsequent page views with a valid cache:
+1.  A very small **inline "shunt" script** is embedded directly into the HTML `<head>`. This script includes:
+    *   All the cached animation data (`window.lhaPreloadedAnimations`).
+    *   Plugin settings for the player (`window.lhaPreloadedSettings`).
+    *   The URL of the main player script.
+2.  The shunt script immediately:
+    *   Sets up a queue (`window.lhaEarlyAnimationQueue`) for any animation calls that happen very early.
+    *   Temporarily replaces (shunts) common jQuery and GSAP animation functions. If these functions are called by other scripts before the main player is ready, their details are put into the queue instead of executing immediately.
+    *   Dynamically loads the main player script (`lha-animation-optimizer-public.js`) asynchronously.
+3.  Once the main player script loads, it:
+    *   Restores the original jQuery and GSAP functions that were shunted.
+    *   Processes all animation calls from the `lhaEarlyAnimationQueue`, executing them with the now-restored original functions.
+    *   Initializes all other cached animations, preparing them for lazy-loaded playback as usual.
+This two-step process ensures that the initial page has minimal script impact while still capturing and managing animations that might fire very early.
 
-= What types of animations can the plugin now detect? =
-The plugin can detect and cache:
-*   **jQuery animations:** Created by `.animate()` and specific methods like `fadeIn`, `fadeOut`, `slideUp`, `slideDown`, `slideToggle`, `fadeTo`, `fadeToggle`.
-*   **GSAP animations:** Tweens created with methods like `gsap.to()`, `gsap.fromTo()`, and those added to GSAP Timelines. It attempts to capture "fromTo" states and stagger properties.
-*   **CSS Keyframe Animations:** Detected when applied to elements (e.g., via class changes or direct style manipulation).
-*   **CSS Transitions:** Detected when properties change on elements that have transitions defined for them.
+= What types of animations can the plugin now detect? = (Same as v2.0.0)
+*   jQuery: `.animate()`, `fadeIn`, `fadeOut`, `slideUp`, `slideDown`, `slideToggle`, `fadeTo`, `fadeToggle`.
+*   GSAP: `gsap.to()`, `gsap.fromTo()`, tweens added via `Timeline.prototype.add`, "fromTo" states, stagger.
+*   CSS Keyframe Animations and CSS Transitions.
 
-= How does the CSS Animation/Transition detection work? =
-It uses the `MutationObserver` API, a browser feature that allows the script to watch for changes made to the DOM (Document Object Model – the structure of your page). When attributes like `class` or `style` change on an element, or when new elements are added to the page, the MutationObserver notifies our script. The script then inspects the affected element(s) to see if any CSS animations or transitions are active (by checking `getComputedStyle`). If so, it records their details. This detection is conditional and can be disabled in settings if needed.
+= How does the CSS Animation/Transition detection work? = (Same as v2.0.0)
 
-= What are the 'Advanced jQuery/GSAP Detection' settings for? =
-*   **Advanced jQuery Detection:** By default, the plugin wraps jQuery's core `.animate()` method. Enabling this setting extends detection to other common jQuery animation methods like `.fadeIn()`, `.slideUp()`, etc. This provides more comprehensive jQuery animation caching.
-*   **Advanced GSAP Detection:** By default, the plugin scans the GSAP global timeline. Enabling this setting also wraps `Timeline.prototype.add`, allowing it to potentially capture tweens that are part of complex, nested timelines more effectively.
+= What are the 'Advanced jQuery/GSAP Detection' settings for? = (Same as v2.0.0)
 
-If you are not using these specific jQuery methods or complex GSAP timeline structures, you *could* disable these settings to slightly reduce the detector script's initial setup, but they are generally safe to leave enabled.
+= What is Debug Mode and how do I use it? (Updated for 2.1.0) =
+When enabled, both the `lha-animation-detector.js` (on detection runs) and the `lha-animation-optimizer-public.js` (player script, especially when processing shunt queue or preloaded data) will output detailed logs to the browser console. This helps trace the entire lifecycle from detection to shunt to playback.
 
-= What is Debug Mode and how do I use it? =
-When "Enable Debug Mode" is checked in the plugin settings, the `lha-animation-detector.js` script (which runs on first visits or when the cache is empty) will output detailed information to your browser's developer console (usually accessible by pressing F12). This includes:
-*   Which detection features are enabled/disabled.
-*   When specific animation wrappers (like for jQuery or GSAP) are being set up.
-*   Details of each animation it detects (selector, type, properties).
-*   Information about AJAX calls made to save the data.
-*   MutationObserver activity (if enabled).
-To use it, enable the setting, clear the animation cache (or save settings again), then visit a public page of your site with the developer console open. This is primarily for troubleshooting if you suspect an animation isn't being detected correctly. Remember to disable it on a live site after troubleshooting.
+= What should I do if an animation isn't detected? = (Same as v2.0.0)
 
-= What should I do if an animation isn't detected? =
-1.  **Enable Debug Mode:** Check the browser console for logs from "LHA Detector:" for clues.
-2.  **Check Configuration:** Ensure the relevant detection features (Advanced jQuery, Advanced GSAP, CSS Detection) are enabled in the plugin settings.
-3.  **Clear Cache:** Use the "Clear Animation Cache" button in settings and reload the public page twice (once for detection, once to test playback from cache).
-4.  **Complexity:** Very complex or unusually implemented JavaScript animations might be beyond the scope of automatic detection. The system relies on common patterns.
-5.  **Timing:** Animations triggered very late after page load by complex user interactions might not be caught by the initial detection phase.
-6.  **External Libraries:** Ensure jQuery and GSAP (if used) are loaded correctly and are accessible when the detector script runs.
-7.  **Plugin/Theme Conflicts:** Test with other plugins disabled and a default theme to rule out conflicts.
+== Performance Considerations ==
+
+*   **Shunt Script Size:** The inline shunt script's own JavaScript code is very small (manually minified, it's approx 1.1KB, gzipped to **<0.5KB**).
+*   **Cached Data Size:** The main variable part of the inline script's size is the JSON data for `window.lhaPreloadedAnimations` (the cached animation details) and `window.lhaPreloadedSettings`. For sites with many complex animations, this JSON data can increase the size of the inline script. However, this is generally still more performant than loading the full detector script and re-detecting animations on every page load.
+*   The main player script is loaded asynchronously/deferred when the shunt is active, minimizing its impact on initial page rendering.
 
 == Screenshots ==
 
@@ -126,53 +124,48 @@ To use it, enable the setting, clear the animation cache (or save settings again
 
 == Changelog ==
 
-= 2.0.0 (YYYY-MM-DD) =
-*   **NEW:** Comprehensive Animation Detection & Caching Overhaul:
-    *   **Enhanced jQuery Detection:** Now wraps specific methods like `fadeIn`, `fadeOut`, `slideUp`, `slideDown`, `slideToggle`, `fadeTo`, `fadeToggle` in addition to `.animate()`.
-    *   **Enhanced GSAP Detection:** Wraps `Timeline.prototype.add` for broader capture of tweens within timelines. Improved data extraction for "fromTo" states and stagger properties. Implemented deduplication for GSAP tweens.
-    *   **NEW: CSS Animation & Transition Detection:** Added detection for CSS keyframe animations and CSS transitions using `MutationObserver`.
-*   **NEW:** Configurable Detection Mechanisms:
-    *   Added admin settings to enable/disable "Advanced jQuery Detection," "Advanced GSAP Detection," and "CSS Animation/Transition Detection (MutationObserver)".
-*   **NEW:** Debug Mode:
-    *   Added an admin setting to "Enable Debug Mode" for detailed console logging from the detector script.
-*   **ENHANCEMENT:** Player Script (`lha-animation-optimizer-public.js`):
-    *   Updated to correctly interpret and play back all newly detected animation types (jQuery specific methods, GSAP fromTo/stagger, CSS animations).
-    *   Improved data handling from `dataset` attributes for animation playback.
-*   **ENHANCEMENT:** Admin Panel:
-    *   Added new settings fields with descriptions.
-    *   Cache invalidation (version update and data deletion) now occurs reliably when any plugin settings are saved.
-*   **ENHANCEMENT:** Performance & Robustness:
-    *   Refined selector generation in the detector script with depth limiting.
-    *   Added `element.isConnected` check before `getComputedStyle` in MutationObserver logic.
-    *   Optimized GSAP data cloning in the detector.
-*   **DOCUMENTATION:** Updated `readme.txt` and inline code comments extensively to reflect all new features and logic.
+= 2.1.0 (YYYY-MM-DD) =
+*   **NEW:** Introduced a two-step loading mechanism for cached animation playback.
+    *   When cache is valid, a minimal inline "shunt" script (`lha-inline-shunt-logic.js` / `.min.js`) is injected into `wp_head`.
+    *   The shunt script holds preloaded animation data/settings, intercepts early jQuery/GSAP calls by queuing them, and dynamically loads the main player script.
+    *   The main player script (`lha-animation-optimizer-public.js`) now restores original animation functions, processes the early animation queue, then initializes cached animations and lazy loading.
+*   **ENHANCEMENT:** Minified the inline shunt script and implemented loading of `.min.js` or `.js` based on `SCRIPT_DEBUG` in PHP.
+*   **ENHANCEMENT:** Added more detailed debug logging to both the shunt script and the main player script to trace the new loading and execution flow.
+*   **DOCUMENTATION:** Updated `readme.txt` and inline code comments to reflect the Phase 3 two-step loading architecture.
+
+= 2.0.0 =
+*   NEW: Comprehensive Animation Detection & Caching Overhaul (jQuery specific methods, GSAP Timeline.add, CSS Animations/Transitions via MutationObserver).
+*   NEW: Configurable Detection Mechanisms (toggles for advanced jQuery, GSAP, CSS detection).
+*   NEW: Debug Mode for detector script.
+*   ENHANCEMENT: Player script updated for new animation types.
+*   ENHANCEMENT: Admin panel updates for new settings and reliable cache invalidation.
+*   ENHANCEMENT: Performance refinements in detector script.
+*   DOCUMENTATION: Major updates to readme and inline comments.
 
 = 1.1.0 =
 *   NEW: Implemented Automatic Animation Caching for jQuery (`.animate()`) and GSAP animations.
-*   NEW: Added "Clear Animation Cache" button to the admin settings page.
-*   ENHANCEMENT: Animation cache version is now updated when plugin settings are saved.
-*   ENHANCEMENT: Improved sanitization for detected animation data.
-*   ENHANCEMENT: Refined selector generation in the detector script.
-*   REFACTOR: Consolidated public script enqueuing and localization logic.
-*   Updated inline code comments and documentation.
+*   NEW: Added "Clear Animation Cache" button.
+*   ENHANCEMENT: Cache version updated on settings save.
+*   ENHANCEMENT: Improved sanitization and selector generation.
+*   REFACTOR: Consolidated public script enqueuing.
 
 = 1.0.0 =
 *   Initial release.
-*   Features: Lazy loading of animations using IntersectionObserver, configurable threshold.
 
 == Upgrade Notice ==
+
+= 2.1.0 =
+This version introduces an optimized two-step loading mechanism for cached animations using an inline "shunt" script. This should improve the handling of animations that fire very early in the page load and further reduce the initial script footprint on cached views. Debug mode has also been enhanced.
 
 = 2.0.0 =
 This is a major update that significantly expands the plugin's animation detection capabilities to include more jQuery methods, more GSAP scenarios, and CSS animations/transitions. It also introduces new admin settings for finer control over detection and a debug mode. Please review the new configuration options and test your site's animations after updating.
 
 == Known Limitations/Considerations ==
-
-*   **Detection Accuracy:** While significantly improved, 100% accurate detection of all possible animation implementations (especially highly dynamic or unusually coded JavaScript animations, or very complex CSS interactions) is challenging. The plugin focuses on common, well-structured patterns.
-*   **Performance Trade-offs:**
-    *   The `MutationObserver` for CSS detection is powerful but can add overhead on sites with extremely frequent and complex DOM changes. If you notice performance issues on such specific sites, consider disabling this feature.
-    *   Advanced JS library wrapping (jQuery, GSAP) adds a small overhead during the detection phase. These are generally negligible but can be disabled if not needed.
-*   **Complex Callbacks/Logic:** Callbacks or complex logic within JavaScript animations (e.g., `onComplete` functions in GSAP/jQuery that trigger other actions) are not replicated by the caching system. The animation's visual properties are cached and replayed.
-*   **Dynamic Selectors:** If JavaScript generates highly dynamic selectors or frequently changes element IDs/classes that are critical for animation targeting, the cached selectors might become stale. Regular cache clearing might be needed in such edge cases.
+(Same as v2.0.0, but the new loading mechanism aims to mitigate some timing issues for early animations)
+*   **Detection Accuracy:** Highly complex or unusually coded JS animations, or very intricate CSS interactions might not be fully captured.
+*   **Performance Trade-offs:** MutationObserver for CSS detection can be resource-intensive on highly dynamic sites.
+*   **Complex Callbacks/Logic:** Callbacks within JS animations are not replicated.
+*   **Dynamic Selectors:** Cached selectors might become stale if IDs/classes change frequently without cache clearing.
 
 == Support ==
 

@@ -1,285 +1,280 @@
-(function( window, document, $ ) { // Added $ for jQuery if used
+(function( window, document, $ ) { // $ is passed but jQuery availability is still checked for operations
 	'use strict';
 
 	/**
-	 * LHA Animation Optimizer Public Script
+	 * LHA Animation Optimizer Main Player Script
 	 * This script is responsible for:
-	 * 1. Lazy loading animations (both CSS and JavaScript-driven) using IntersectionObserver.
-	 * 2. If animation data is cached (provided by `lhaPluginData.cachedAnimations`):
+	 * 1. Restoring original jQuery/GSAP functions if they were shunted.
+	 * 2. Processing any animations queued by the shunt script.
+	 * 3. Lazy loading animations (both CSS and JavaScript-driven) using IntersectionObserver.
+	 * 4. If animation data is cached (from preloaded data or lhaPluginData):
 	 *    - Preparing elements by transferring cached animation details to their `dataset` attributes.
 	 *    - Playing these cached animations (jQuery, GSAP, CSS) when elements become visible.
-	 * 3. If no animation data is cached, it primarily acts as a lazy loader for elements
-	 *    manually assigned the `.lha-animation-target` class for CSS animations.
 	 */
 
-	// Default plugin settings. These can be overridden by data localized from PHP via `lhaPluginData`.
+	// --- 1. Data Sourcing & Settings Initialization ---
 	const defaultPluginSettings = {
-		lazyLoadAnimations: true,               // Global toggle for lazy loading animations.
-		intersectionObserverThreshold: 0.1,     // Percentage of an element's visibility needed to trigger its animation.
-		ajax_url: '',                           // AJAX URL (not directly used in this player script but available).
-		animationTriggerClass: 'lha-animate-now' // Default CSS class added to elements to trigger CSS-based animations.
+		lazyLoadAnimations: true,
+		intersectionObserverThreshold: 0.1,
+		ajax_url: '', // Not actively used by player but part of settings structure
+		animationTriggerClass: 'lha-animate-now',
+        debugMode: false // Default debugMode for player itself
 	};
 
-	// Initialize current settings by merging defaults with any localized settings.
-	let lhaSettings = { ...defaultPluginSettings };
-	// This will hold the array of cached animation objects if provided by the PHP script.
-	let lhaCachedAnimations = null;
+    // Prioritize preloaded data from shunt, then lhaPluginData, then defaults.
+    let lhaSettings = { 
+        ...defaultPluginSettings, 
+        ...(window.lhaPluginData && window.lhaPluginData.settings), // Fallback to lhaPluginData first
+        ...(window.lhaPreloadedSettings) // Preloaded settings take highest precedence
+    };
+	let lhaCachedAnimations = window.lhaPreloadedAnimations || (window.lhaPluginData && window.lhaPluginData.cachedAnimations) || [];
 
-	// Check if `lhaPluginData` (localized from PHP) exists and process its contents.
-	if ( window.lhaPluginData ) {
-		if ( window.lhaPluginData.settings ) {
-			// Merge localized settings, ensuring defaults are kept for any missing keys.
-			lhaSettings = {
-				...defaultPluginSettings, // Start with defaults.
-				...window.lhaPluginData.settings, // Override with localized settings.
-				// Ensure specific data types for critical settings.
-				intersectionObserverThreshold: parseFloat(
-					// Use localized value or fall back to default if parsing fails or value is missing.
-					window.lhaPluginData.settings.intersectionObserverThreshold || defaultPluginSettings.intersectionObserverThreshold
-				),
-				lazyLoadAnimations: typeof window.lhaPluginData.settings.lazyLoadAnimations === 'boolean' ?
-									window.lhaPluginData.settings.lazyLoadAnimations : // Use boolean if provided.
-									defaultPluginSettings.lazyLoadAnimations // Fallback to default.
-			};
-		}
+    // Clean up global preloaded variables
+    try {
+        if (window.lhaPreloadedAnimations) delete window.lhaPreloadedAnimations;
+        if (window.lhaPreloadedSettings) delete window.lhaPreloadedSettings;
+    } catch (e) {
+        // console.warn("LHA Player: Could not delete preloaded globals.", e);
+    }
+    
+    // --- Debug Logging Utility ---
+    function debugLog(...args) {
+        if (lhaSettings.debugMode) {
+            console.log('LHA Player:', ...args);
+        }
+    }
 
-		// Check for and store cached animation data.
-		if ( window.lhaPluginData.cachedAnimations && 
-			 Array.isArray(window.lhaPluginData.cachedAnimations) && 
-			 window.lhaPluginData.cachedAnimations.length > 0 ) {
-			lhaCachedAnimations = window.lhaPluginData.cachedAnimations;
-			// console.log("LHA Player: Mode: Animation Player. Cached animations found:", lhaCachedAnimations);
-		} else {
-			// console.log("LHA Player: Mode: Lazy Loader / No cached animations. Detector script may run if cache is invalid.");
-		}
-	} else {
-		// console.warn("LHA Player: `lhaPluginData` not found. Using default settings and operating in basic lazy load mode.");
+    // Initial log indicating script load and data source.
+    if (window.lhaPreloadedSettings || window.lhaPreloadedAnimations) {
+        debugLog("Script loaded. Initializing with PRELOADED data (shunt active). Preloaded Settings:", window.lhaPreloadedSettings, "Preloaded Animations Count:", (window.lhaPreloadedAnimations || []).length);
+    } else if (window.lhaPluginData) {
+        debugLog("Script loaded. Initializing with LHA_PLUGIN_DATA (no shunt or shunt failed). Settings:", window.lhaPluginData.settings, "Animations Count:", (window.lhaPluginData.cachedAnimations || []).length);
+    } else {
+        debugLog("Script loaded. No preloaded data or lhaPluginData found. Using defaults.");
+    }
+    debugLog("Effective initial settings:", lhaSettings, "Effective cached animations count:", lhaCachedAnimations.length);
+
+
+	// --- 2. Restore Original Animation Functions ---
+	function restoreOriginalAnimationFunctions() {
+        debugLog("Phase 2: Attempting to restore original animation functions...");
+        let restoredJQuery = false;
+        let restoredGSAP = false;
+
+        if (window.LHA_Originals) {
+            // jQuery
+            if (typeof window.jQuery === 'function' && typeof window.jQuery.fn === 'object' && window.jQuery.fn.lhaShuntWrapped && window.LHA_Originals.jquery) {
+                debugLog("Restoring jQuery methods...");
+                for (const methodName in window.LHA_Originals.jquery) {
+                    if (Object.hasOwnProperty.call(window.LHA_Originals.jquery, methodName)) {
+                        window.jQuery.fn[methodName] = window.LHA_Originals.jquery[methodName];
+                        debugLog("Restored jQuery method:", methodName);
+                        restoredJQuery = true;
+                    }
+                }
+                try { delete window.jQuery.fn.lhaShuntWrapped; } catch(e) { /* ignore */ }
+            } else {
+                debugLog("jQuery or its shunt wrappers/originals not found for restoration (this is normal if jQuery not used or shunt inactive).");
+            }
+
+            // GSAP
+            if (typeof window.gsap === 'object' && window.gsap.lhaShuntWrapped && window.LHA_Originals.gsap) {
+                debugLog("Restoring GSAP methods...");
+                for (const methodName in window.LHA_Originals.gsap) {
+                    if (Object.hasOwnProperty.call(window.LHA_Originals.gsap, methodName)) {
+                        window.gsap[methodName] = window.LHA_Originals.gsap[methodName];
+                        debugLog("Restored GSAP method:", methodName);
+                        restoredGSAP = true;
+                    }
+                }
+                 try { delete window.gsap.lhaShuntWrapped; } catch(e) { /* ignore */ }
+            } else {
+                 debugLog("GSAP or its shunt wrappers/originals not found for restoration (normal if GSAP not used or shunt inactive).");
+            }
+        } else {
+            debugLog("window.LHA_Originals not found. No functions to restore (normal if shunt was not active).");
+        }
+        debugLog("Phase 2: Original function restoration finished.", "jQuery restored:", restoredJQuery, "GSAP restored:", restoredGSAP);
+	}
+
+	// --- 3. Process Early Animation Queue ---
+	function processEarlyAnimationQueue() {
+        debugLog("Phase 3: Processing early animation queue...");
+        if (window.lhaEarlyAnimationQueue && window.lhaEarlyAnimationQueue.length > 0) {
+            debugLog("Processing early animation queue. Items:", window.lhaEarlyAnimationQueue.length);
+            let queuedCall;
+            while (queuedCall = window.lhaEarlyAnimationQueue.shift()) { // Process and empty the queue
+                debugLog("Replaying queued call:", queuedCall);
+                try {
+                    if (queuedCall.type === 'jquery' && window.LHA_Originals && window.LHA_Originals.jquery && window.LHA_Originals.jquery[queuedCall.method]) {
+                        debugLog("Replaying jQuery method:", queuedCall.method, "on target:", queuedCall.target, "with args:", queuedCall.args);
+                        window.LHA_Originals.jquery[queuedCall.method].apply(queuedCall.target, queuedCall.args);
+                    } else if (queuedCall.type === 'gsap' && window.LHA_Originals && window.LHA_Originals.gsap && window.LHA_Originals.gsap[queuedCall.method]) {
+                        debugLog("Replaying GSAP method:", queuedCall.method, "with args:", queuedCall.args);
+                        window.LHA_Originals.gsap[queuedCall.method].apply(null, queuedCall.args);
+                    } else {
+                        debugLog("Could not replay queued call - original method not found or library missing:", queuedCall);
+                    }
+                } catch (e) {
+                    debugLog("Error replaying queued animation call:", queuedCall, e);
+                }
+            }
+            debugLog("Early animation queue processed.");
+        } else {
+            debugLog("No early animation queue to process or queue already processed.");
+        }
+        // Clean up queue and originals store after processing
+        try {
+            if(window.lhaEarlyAnimationQueue) delete window.lhaEarlyAnimationQueue;
+            debugLog("Early animation queue deleted from window.");
+            if(window.LHA_Originals) delete window.LHA_Originals; 
+            debugLog("LHA_Originals deleted from window.");
+        } catch(e) { debugLog("Minor error during queue/originals cleanup:", e); }
 	}
 
 	/**
-	 * Initializes elements based on cached animation data received from the server.
-	 * This function iterates through the `animations` array (from `lhaCachedAnimations`).
-	 * For each animation object, it finds the target DOM element(s) using `animation.selector`.
-	 * It then adds the `lha-animation-target` class (to make them observable) and transfers all
-	 * animation properties from the `animation` object to the element's `dataset` attributes
-	 * (e.g., `animation.jquery_duration` becomes `element.dataset.jqueryDuration`).
-	 * @param {Array} animations Array of animation objects from `lhaCachedAnimations`.
+	 * Initializes elements based on cached animation data.
 	 */
 	function initializeCachedAnimations(animations) {
 		if (!animations || !Array.isArray(animations)) {
-			// console.warn("LHA Player: `initializeCachedAnimations` called with invalid or no animations data.");
+			debugLog("initializeCachedAnimations called with invalid or no animations data.");
 			return;
 		}
-
-		// console.log("LHA Player: Initializing cached animations setup. Number of animation objects:", animations.length);
+		debugLog("Initializing cached animations setup. Number of animation objects:", animations.length);
 		animations.forEach((animation, index) => {
-			// Each `animation` object must have a `selector` and `type`.
 			if (!animation.selector || !animation.type) {
-				// console.warn(`LHA Player: Skipping cached animation at index ${index} due to missing selector or type.`, animation);
+				debugLog(`Skipping cached animation at index ${index} due to missing selector or type.`, animation);
 				return;
 			}
-
 			try {
-				// Find all DOM elements matching the animation's selector.
 				const elements = document.querySelectorAll(animation.selector);
 				if (elements.length === 0) {
-					// console.log(`LHA Player: No elements found for cached animation selector: "${animation.selector}" (type: ${animation.type}).`);
+					debugLog(`No elements found for cached animation selector: "${animation.selector}" (type: ${animation.type}).`);
 					return;
 				}
-
 				elements.forEach(element => {
-					// Add `lha-animation-target` to make the element discoverable by the IntersectionObserver.
 					element.classList.add('lha-animation-target');
-					
-					// Store all properties from the animation object directly into the element's dataset.
-					// This makes all animation details (type, duration, properties, etc.) available
-					// in the `playAnimation` function.
 					for (const key in animation) {
 						if (Object.hasOwnProperty.call(animation, key)) {
-							// Convert snake_case keys (from PHP/JSON) to kebab-case for dataset,
-							// though modern browsers largely handle camelCase for dataset keys too.
-							// Standardizing on kebab-case for dataset keys read via `element.dataset.someKey` (becomes someKey).
-							// For direct `dataset[key]` assignment, camelCase or original key can be used.
-							// Here, we'll use a simple conversion for consistency if keys were snake_case.
-							// However, the detector primarily uses camelCase keys for JS objects.
-							// The main point is to transfer all data.
-							let datasetKey = key.replace(/_/g, '-');
-							// `element.dataset` automatically converts kebab-case to camelCase for property access.
-							// e.g. `element.dataset.jqueryDuration` for `data-jquery-duration`.
-							// So, we can just use the original camelCase keys from the animation object.
-							datasetKey = key;
-
-
-							if (key === 'id' || key === 'selector') continue; // Don't re-store these if not needed for playback logic.
-
+							let datasetKey = key;
+							if (key === 'id' || key === 'selector') continue; 
 							if (typeof animation[key] === 'object' && animation[key] !== null) {
 								try {
-									// Objects (like jquery_properties, gsap_to_vars) must be stringified for dataset.
 									element.dataset[datasetKey] = JSON.stringify(animation[key]);
 								} catch (e) {
-									// console.warn(`LHA Player: Could not stringify object for dataset key "${datasetKey}":`, animation[key], e);
+									debugLog(`Could not stringify object for dataset key "${datasetKey}":`, animation[key], e);
 								}
 							} else {
-								// Primitives (string, number, boolean) can be set directly.
 								element.dataset[datasetKey] = animation[key];
 							}
 						}
 					}
-					// Example: element.dataset.animationType = animation.type;
-					// element.dataset.jqueryDuration = animation.jquery_duration;
-					// console.log("LHA Player: Prepared element for animation:", element, animation.type, element.dataset);
+                    debugLog("Prepared element for animation:", element, animation.type, element.dataset);
 				});
 			} catch (e) {
-				// Catch errors from `document.querySelectorAll` (invalid selector) or other issues.
-				console.error(`LHA Player: Error processing cached animation for selector "${animation.selector}":`, e);
+				debugLog(`Error processing cached animation for selector "${animation.selector}":`, e);
 			}
 		});
 	}
 
-
 	/**
-	 * Initializes the lazy loading of animations using IntersectionObserver.
-	 * This function finds all elements with the class `.lha-animation-target`
-	 * (which includes elements prepared by `initializeCachedAnimations` and any elements
-	 * manually assigned this class for CSS-only animations) and observes them.
+	 * Initializes lazy loading of animations.
 	 */
 	function initLazyLoadAnimations() {
 		if (!lhaSettings.lazyLoadAnimations) {
-			// console.log('LHA Player: Lazy loading of animations is disabled in settings.');
+			debugLog('Lazy loading of animations is disabled in settings.');
 			return;
 		}
-
-		// Query for all elements marked for animation, including those from cache
-		// and those manually given the class for CSS animations.
 		const animationTargets = document.querySelectorAll('.lha-animation-target');
-
 		if (!animationTargets.length) {
-			// console.log('LHA: No elements found with class .lha-animation-target to observe.');
+			debugLog('No elements found with class .lha-animation-target to observe.');
 			return;
 		}
-
-		// Validate and set the threshold for IntersectionObserver.
 		let thresholdValue = lhaSettings.intersectionObserverThreshold;
 		if (typeof thresholdValue !== 'number' || thresholdValue < 0 || thresholdValue > 1) {
-			// console.warn('LHA: Invalid intersectionObserverThreshold, defaulting to 0.1.');
-			thresholdValue = 0.1; // Fallback to default if invalid.
+			debugLog('Invalid intersectionObserverThreshold, defaulting to 0.1.');
+			thresholdValue = 0.1;
 		}
-
-		// Fallback for browsers that do not support IntersectionObserver.
 		if (!('IntersectionObserver' in window)) {
-			// console.log('LHA: IntersectionObserver not supported. Activating all animations directly.');
-			animationTargets.forEach(target => {
-				playAnimation(target); // Attempt to play animation directly without observing.
-			});
+			debugLog('IntersectionObserver not supported. Activating all animations directly.');
+			animationTargets.forEach(target => playAnimation(target));
 			return;
 		}
-
-		// Configure the IntersectionObserver.
-		const observerOptions = {
-			root: null, // Use the viewport as the root.
-			rootMargin: '0px', // No margin around the root.
-			threshold: thresholdValue, // Visibility threshold.
-		};
-
-		// Create the IntersectionObserver instance.
+		const observerOptions = { root: null, rootMargin: '0px', threshold: thresholdValue };
 		const animationObserver = new IntersectionObserver((entries, observer) => {
 			entries.forEach(entry => {
-				// When an element becomes intersecting (visible).
 				if (entry.isIntersecting) {
-					playAnimation(entry.target); // Trigger its animation.
-					// Stop observing the element once its animation is triggered to prevent re-triggering.
+					playAnimation(entry.target); 
 					observer.unobserve(entry.target);
 				}
 			});
 		}, observerOptions);
-
-		// Start observing all designated animation target elements.
-		animationTargets.forEach(target => {
-			animationObserver.observe(target);
-		});
+		animationTargets.forEach(target => animationObserver.observe(target));
+        debugLog("IntersectionObserver initialized for", animationTargets.length, "targets.");
 	}
 
 	/**
-	 * Plays the animation for the given target element based on its dataset attributes.
-	 * This function is called when an element becomes visible (intersecting).
-	 * It first adds the general animation trigger class (for CSS animations)
-	 * and then checks for specific JavaScript animation data (jQuery/GSAP) to play.
-	 * @param {HTMLElement} element The DOM element to animate.
+	 * Plays the animation for a given element.
 	 */
 	function playAnimation(element) {
-		// Add the primary CSS class that triggers CSS-defined animations.
-		// This class (e.g., 'lha-animate-now') should be used in stylesheets
-		// for standard CSS keyframe or transition animations.
 		const configuredTriggerClass = element.dataset.triggerClass || lhaSettings.animationTriggerClass;
 		element.classList.add(configuredTriggerClass);
-
-		// Check if the element has specific JavaScript animation data stored in its dataset.
 		const animationType = element.dataset.animationType;
+        debugLog("Attempting to play animation for:", element, "Type:", animationType || "CSS (default)");
 
 		try {
 			if (animationType === 'jquery-animate') {
 				const properties = element.dataset.jqueryProperties ? JSON.parse(element.dataset.jqueryProperties) : null;
 				const duration = element.dataset.jqueryDuration ? parseInt(element.dataset.jqueryDuration, 10) : 400;
                 const easing = element.dataset.jqueryEasing || 'swing';
-				// console.log("LHA Player: Applying jQuery .animate() to:", element, "Properties:", properties, "Duration:", duration, "Easing:", easing);
-				if (properties && typeof $ !== 'undefined') {
-					$(element).animate(properties, duration, easing);
-				} else if (typeof $ === 'undefined') {
-					console.warn("LHA Player: jQuery ($) is not defined. Cannot play jQuery .animate() for element:", element);
-				}
+				debugLog("Applying jQuery .animate() to:", element, { properties, duration, easing });
+				if (properties && typeof $ !== 'undefined') $(element).animate(properties, duration, easing);
+				else if (typeof $ === 'undefined') console.warn("LHA Player: jQuery ($) is not defined.");
 
 			} else if (animationType && animationType.startsWith('jquery-') && animationType !== 'jquery-animate') {
-                // Handles fadeIn, fadeOut, slideUp, slideDown, slideToggle, fadeToggle, fadeTo
-                const method = animationType.substring('jquery-'.length); // e.g., 'fadeIn', 'fadeTo'
+                const method = animationType.substring('jquery-'.length); 
                 if (typeof $ !== 'undefined' && typeof $.fn[method] === 'function') {
-                    const duration = element.dataset.jqueryDuration ? (isNaN(parseInt(element.dataset.jqueryDuration, 10)) ? element.dataset.jqueryDuration : parseInt(element.dataset.jqueryDuration, 10)) : 400;
+                    const durationArg = element.dataset.jqueryDuration;
+                    const duration = durationArg ? (isNaN(parseInt(durationArg, 10)) ? durationArg : parseInt(durationArg, 10)) : 400;
                     const easing = element.dataset.jqueryEasing || 'swing';
-                    
                     if (method === 'fadeTo') {
                         const opacity = element.dataset.jqueryTargetOpacity ? parseFloat(element.dataset.jqueryTargetOpacity) : 1;
-                        // console.log(`LHA Player: Applying jQuery .${method}() to:`, element, "Duration:", duration, "Opacity:", opacity, "Easing:", easing);
+                        debugLog(`Applying jQuery .${method}() to:`, element, { duration, opacity, easing });
                         $(element)[method](duration, opacity, easing);
                     } else {
-                        // console.log(`LHA Player: Applying jQuery .${method}() to:`, element, "Duration:", duration, "Easing:", easing);
+                        debugLog(`Applying jQuery .${method}() to:`, element, { duration, easing });
                         $(element)[method](duration, easing);
                     }
-                } else if (typeof $ === 'undefined') {
-                     console.warn(`LHA Player: jQuery ($) is not defined. Cannot play ${animationType} for element:`, element);
-                } else if (typeof $.fn[method] !== 'function') {
-                    console.warn(`LHA Player: jQuery method .${method}() not found. Cannot play ${animationType} for element:`, element);
-                }
+                } else if (typeof $ === 'undefined') console.warn(`LHA Player: jQuery ($) is not defined for ${animationType}.`);
+                else console.warn(`LHA Player: jQuery method .${method}() not found for ${animationType}.`);
 
 			} else if (animationType === 'gsap-tween') {
 				const toVars = element.dataset.gsapToVars ? JSON.parse(element.dataset.gsapToVars) : null;
 				const duration = element.dataset.gsapDuration ? parseFloat(element.dataset.gsapDuration) : 1;
-                const stagger = element.dataset.gsapStagger ? (element.dataset.gsapStagger.startsWith('{') ? JSON.parse(element.dataset.gsapStagger) : parseFloat(element.dataset.gsapStagger)) : undefined;
-				
-                // console.log("LHA Player: Applying GSAP .to() to:", element, "Vars:", toVars, "Duration:", duration, "Stagger:", stagger);
+                const staggerStr = element.dataset.gsapStagger;
+                const stagger = staggerStr ? (staggerStr.startsWith('{') ? JSON.parse(staggerStr) : parseFloat(staggerStr)) : undefined;
+				debugLog("Applying GSAP .to() to:", element, { toVars, duration, stagger });
 				if (toVars && typeof gsap !== 'undefined') {
                     let animVars = { ...toVars, duration: duration };
                     if (stagger !== undefined) animVars.stagger = stagger;
 					gsap.to(element, animVars);
-				} else if (typeof gsap === 'undefined') {
-					console.warn("LHA Player: GSAP is not defined. Cannot play GSAP .to() for element:", element);
-				}
+				} else if (typeof gsap === 'undefined') console.warn("LHA Player: GSAP is not defined.");
 
 			} else if (animationType === 'gsap-fromto') {
                 const fromVars = element.dataset.gsapFromVars ? JSON.parse(element.dataset.gsapFromVars) : null;
 				const toVars = element.dataset.gsapToVars ? JSON.parse(element.dataset.gsapToVars) : null;
 				const duration = element.dataset.gsapDuration ? parseFloat(element.dataset.gsapDuration) : 1;
-                const stagger = element.dataset.gsapStagger ? (element.dataset.gsapStagger.startsWith('{') ? JSON.parse(element.dataset.gsapStagger) : parseFloat(element.dataset.gsapStagger)) : undefined;
-
-                // console.log("LHA Player: Applying GSAP .fromTo() to:", element, "FromVars:", fromVars, "ToVars:", toVars, "Duration:", duration, "Stagger:", stagger);
+                const staggerStr = element.dataset.gsapStagger;
+                const stagger = staggerStr ? (staggerStr.startsWith('{') ? JSON.parse(staggerStr) : parseFloat(staggerStr)) : undefined;
+                debugLog("Applying GSAP .fromTo() to:", element, { fromVars, toVars, duration, stagger });
                 if (fromVars && toVars && typeof gsap !== 'undefined') {
                     let animVars = { ...toVars, duration: duration };
                     if (stagger !== undefined) animVars.stagger = stagger;
                     gsap.fromTo(element, fromVars, animVars);
-                } else if (typeof gsap === 'undefined') {
-                    console.warn("LHA Player: GSAP is not defined. Cannot play GSAP .fromTo() for element:", element);
-                }
+                } else if (typeof gsap === 'undefined') console.warn("LHA Player: GSAP is not defined.");
             
             } else if (animationType === 'css-animation') {
-                // console.log("LHA Player: Applying CSS animation styles to:", element);
+                debugLog("Applying cached CSS animation styles to:", element, element.dataset);
                 if(element.dataset.cssAnimationName) element.style.animationName = element.dataset.cssAnimationName;
                 if(element.dataset.cssDuration) element.style.animationDuration = element.dataset.cssDuration;
                 if(element.dataset.cssTimingFunction) element.style.animationTimingFunction = element.dataset.cssTimingFunction;
@@ -287,136 +282,50 @@
                 if(element.dataset.cssIterationCount) element.style.animationIterationCount = element.dataset.cssIterationCount;
                 if(element.dataset.cssDirection) element.style.animationDirection = element.dataset.cssDirection;
                 if(element.dataset.cssFillMode) element.style.animationFillMode = element.dataset.cssFillMode;
-                // The configuredTriggerClass added earlier should make the animation play if styles are set up correctly.
 
             } else if (animationType === 'css-transition') {
-                // For CSS transitions, the primary action is the addition of the trigger class.
-                // The actual transition depends on CSS rules associated with this class.
-                // console.log("LHA Player: Expecting CSS transition for:", element, "on properties:", element.dataset.cssTransitionProperty, "with class", configuredTriggerClass);
-                // No direct style manipulation here for transitions, as it's class-driven.
+                debugLog("Expecting CSS transition for:", element, "on properties:", element.dataset.cssTransitionProperty, "triggered by class:", configuredTriggerClass);
             
             } else {
-				// If no specific JS/CSS animation type from cache, it's assumed to be a generic CSS-driven animation
-                // triggered by the `configuredTriggerClass` added at the beginning of this function.
-				// console.log("LHA Player: Generic CSS animation triggered for:", element, "with class", configuredTriggerClass);
-					}
-				});
-			} catch (e) {
-				console.error("LHA: Error processing cached animation for selector:", animation.selector, e);
+				debugLog("Generic CSS animation target. Triggered by class:", configuredTriggerClass, "on element:", element);
 			}
-		});
-	}
-
-
-	/**
-	 * Initializes the lazy loading of animations using IntersectionObserver.
-	 */
-	function initLazyLoadAnimations() {
-		if ( !lhaSettings.lazyLoadAnimations ) {
-			// console.log('LHA: Lazy loading of animations is disabled in settings.');
-			return;
-		}
-
-		// Query for all elements marked for animation, including those from cache
-		const animationTargets = document.querySelectorAll('.lha-animation-target');
-
-		if (!animationTargets.length) {
-			// console.log('LHA: No elements found with class .lha-animation-target to observe.');
-			return;
-		}
-
-		let thresholdValue = lhaSettings.intersectionObserverThreshold;
-		if (typeof thresholdValue !== 'number' || thresholdValue < 0 || thresholdValue > 1) {
-			thresholdValue = 0.1;
-		}
-
-		if (!('IntersectionObserver' in window)) {
-			// console.log('LHA: IntersectionObserver not supported. Activating all animations.');
-			animationTargets.forEach(target => {
-				playAnimation(target); // Attempt to play animation directly
-			});
-			return;
-		}
-
-		const observerOptions = {
-			root: null,
-			rootMargin: '0px',
-			threshold: thresholdValue,
-		};
-
-		const animationObserver = new IntersectionObserver((entries, observer) => {
-			entries.forEach(entry => {
-				if (entry.isIntersecting) {
-					playAnimation(entry.target);
-					observer.unobserve(entry.target);
-				}
-			});
-		}, observerOptions);
-
-		animationTargets.forEach(target => {
-			animationObserver.observe(target);
-		});
-	}
-
-	/**
-	 * Plays the animation for the given target element based on its dataset attributes.
-	 * @param {HTMLElement} element The element to animate.
-	 */
-	function playAnimation(element) {
-		// The primary trigger class defined in settings (e.g., 'lha-animate-now')
-		// This class should be the one that CSS animations primarily respond to.
-		const configuredTriggerClass = lhaSettings.animationTriggerClass;
-		element.classList.add(configuredTriggerClass);
-
-		// Now check for specific JS animation types from cached data
-		const animationType = element.dataset.animationType;
-
-		if (animationType === 'jquery') {
-			try {
-				const properties = element.dataset.jqueryProperties ? JSON.parse(element.dataset.jqueryProperties) : null;
-				const duration = element.dataset.jqueryDuration ? parseInt(element.dataset.jqueryDuration) : 400; // Default jQuery duration
-				console.log("LHA Player: Applying jQuery animation to:", element, "Properties:", properties, "Duration:", duration);
-				if (properties && typeof $ !== 'undefined') {
-					$(element).animate(properties, duration);
-				} else if (typeof $ === 'undefined') {
-					console.warn("LHA Player: jQuery ($) is not defined. Cannot play jQuery animation.");
-				}
-			} catch (e) {
-				console.error("LHA Player: Error parsing or applying jQuery animation data.", e, element.dataset.jqueryProperties);
-			}
-		} else if (animationType === 'gsap') {
-			try {
-				const toVars = element.dataset.gsapToVars ? JSON.parse(element.dataset.gsapToVars) : null;
-				const duration = element.dataset.gsapDuration ? parseFloat(element.dataset.gsapDuration) : 1; // Default GSAP duration
-				console.log("LHA Player: Applying GSAP animation to:", element, "Vars:", toVars, "Duration:", duration);
-				if (toVars && typeof gsap !== 'undefined') {
-					gsap.to(element, { ...toVars, duration: duration });
-				} else if (typeof gsap === 'undefined') {
-					console.warn("LHA Player: GSAP is not defined. Cannot play GSAP animation.");
-				}
-			} catch (e) {
-				console.error("LHA Player: Error parsing or applying GSAP animation data.", e, element.dataset.gsapToVars);
-			}
-		} else {
-			// If no specific JS animation type, it's assumed to be CSS-driven by the added triggerClass.
-			// console.log("LHA Player: CSS animation triggered for:", element, "with class", configuredTriggerClass);
+		} catch (e) {
+			debugLog("Error playing animation for element:", element, "Type:", animationType, e);
+            // Fallback: ensure the trigger class is still there for basic CSS animations
+            if(!element.classList.contains(configuredTriggerClass)) {
+                element.classList.add(configuredTriggerClass);
+            }
 		}
 	}
 
 	/**
-	 * Initializes the plugin's public-facing JavaScript logic.
+	 * Main initialization function for the player script.
 	 */
 	function init() {
-		// console.log('LHA: Initializing public script with settings:', lhaSettings);
+		debugLog("Main player init sequence started. Debug mode:", lhaSettings.debugMode);
 
-		if (lhaCachedAnimations) {
+        // Step 1: Restore original shunted functions (jQuery, GSAP)
+        restoreOriginalAnimationFunctions();
+
+        // Step 2: Process any animations that were called by user scripts
+        // before this main player script loaded and had a chance to restore originals.
+        processEarlyAnimationQueue();
+
+		// Step 3: If cached animations data is available (from preloaded or lhaPluginData),
+        // prepare the target DOM elements by adding .lha-animation-target and dataset attributes.
+		if (lhaCachedAnimations && lhaCachedAnimations.length > 0) {
 			initializeCachedAnimations(lhaCachedAnimations);
-		}
-		// initLazyLoadAnimations will find all .lha-animation-target elements,
-		// including those prepared by initializeCachedAnimations.
+		} else {
+            debugLog("Phase 4: No cached animations to initialize or lhaCachedAnimations is empty.");
+        }
+
+		// Step 4: Initialize lazy loading for all `.lha-animation-target` elements.
+        // This will observe elements prepared by initializeCachedAnimations and any others manually tagged.
 		initLazyLoadAnimations();
+        debugLog("Main player init sequence completed.");
 	}
 
+	// Execute the initialization function once the DOM is ready, or immediately if already ready.
 	if (document.readyState === 'loading') {
 		document.addEventListener('DOMContentLoaded', init);
 	} else {
@@ -424,6 +333,3 @@
 	}
 
 })( window, document, typeof jQuery !== 'undefined' ? jQuery : null );
-// This file is production-ready for Step 4.
-// Note: Actual playback of jQuery/GSAP requires jQuery/GSAP to be loaded on the page.
-// The optional playback parts are included with checks for their existence.
