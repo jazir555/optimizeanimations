@@ -61,15 +61,36 @@
 	 * Initializes the lazy loading of animations using IntersectionObserver.
 	 */
 	function initLazyLoadAnimations() {
-		if ( !settings.lazyLoadAnimations ) {
-			// console.log('LHA Animation Optimizer: Lazy loading of animations is disabled in settings.');
-			return;
-		}
-
 		const animationTargets = document.querySelectorAll('.lha-animation-target');
 
 		if (!animationTargets.length) {
 			// console.log('LHA Animation Optimizer: No elements found with class .lha-animation-target');
+			return;
+		}
+
+		if ( !settings.lazyLoadAnimations ) {
+			// console.log('LHA Animation Optimizer: Lazy loading disabled. Activating all animations immediately.');
+			animationTargets.forEach(target => {
+				target.classList.add('lha-animate-now');
+			});
+			return;
+		}
+
+		// If lazyLoadAnimations is true, proceed with IntersectionObserver setup.
+		// Ensure threshold is a valid number between 0 and 1, default to 0.1
+		let thresholdValue = settings.intersectionObserverThreshold;
+		if (typeof thresholdValue !== 'number' || thresholdValue < 0 || thresholdValue > 1) {
+			// console.warn('LHA Animation Optimizer: Invalid intersectionObserverThreshold, defaulting to 0.1.');
+			thresholdValue = 0.1;
+		}
+
+
+		if (!('IntersectionObserver' in window)) {
+			// Fallback for older browsers: just make them all visible if IO is not supported.
+			// console.log('LHA Animation Optimizer: IntersectionObserver not supported, activating all animations.');
+			animationTargets.forEach(target => {
+				target.classList.add('lha-animate-now');
+			});
 			return;
 		}
 

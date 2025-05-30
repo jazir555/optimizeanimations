@@ -216,10 +216,21 @@ class Settings_Manager {
 	 * @param    array    $args    Arguments passed to this callback.
 	 */
 	public function render_checkbox_field( $args ) {
-		$options = get_option( $args['option_name'], array() ); // Get all options or empty array if not set
+		$options = get_option( $args['option_name'], array() );
+		// 'label_for' in $args is the unique ID for this field.
+		$field_id = esc_attr( $args['label_for'] );
+		// Construct the name attribute for the input field, e.g., "plugin_options_name[field_id]"
+		$input_name = esc_attr( $args['option_name'] . '[' . $args['label_for'] . ']' );
 		$value = isset( $options[ $args['label_for'] ] ) ? $options[ $args['label_for'] ] : 1; // Default to 1 (true/checked)
 
-		echo '<input type="checkbox" id="' . esc_attr( $args['label_for'] ) . '" name="' . esc_attr( $args['option_name'] . '[' . $args['label_for'] . ']' ) . '" value="1" ' . checked( 1, $value, false ) . ' />';
+		// Output the actual checkbox input (which will be visually hidden by CSS)
+		echo '<input type="checkbox" id="' . $field_id . '" name="' . $input_name . '" value="1" ' . checked( 1, $value, false ) . ' />';
+		// Output an empty label with the class 'custom-checkbox-label'.
+		// This label's 'for' attribute links it to the checkbox, and it will be styled by the CSS.
+		// The actual text label for the field is handled by WordPress in the <th> of the settings table.
+		echo '<label for="' . $field_id . '" class="custom-checkbox-label"></label>';
+
+		// Output the description paragraph if it exists
 		if ( isset( $args['description'] ) ) {
 			echo '<p class="description">' . esc_html( $args['description'] ) . '</p>';
 		}
