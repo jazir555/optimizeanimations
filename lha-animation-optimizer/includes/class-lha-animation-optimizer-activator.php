@@ -27,12 +27,19 @@ class Activator {
 	 * @since    1.0.0
 	 */
 	public static function activate() {
-		// TODO: Add activation logic here.
-		// Example: Set default options, flush rewrite rules if CPTs/taxonomies are registered.
+		// Set default options.
+		$default_options = [
+			'lazy_load_animations'            => 1,
+			'intersection_observer_threshold' => 0.1,
+		];
+
+		add_option( 'lha-animation-optimizer_options', $default_options, '', 'yes' );
+
+		// Example: flush rewrite rules if CPTs/taxonomies are registered.
 		// flush_rewrite_rules();
 
 		// This class is production-ready for its current scope.
-		// Actual activation logic needs to be implemented based on plugin features.
+		// Actual activation logic needs to be implemented based on plugin features if they expand.
 	}
 
 }

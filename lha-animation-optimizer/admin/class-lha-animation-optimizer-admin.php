@@ -251,6 +251,34 @@ class Settings_Manager {
 			echo '<p class="description">' . esc_html( $args['description'] ) . '</p>';
 		}
 	}
+
+	/**
+	 * Enqueue admin-specific stylesheets.
+	 *
+	 * This method is hooked to `admin_enqueue_scripts`.
+	 *
+	 * @since    1.0.1 // Assuming version increment for new feature
+	 * @param    string    $hook_suffix    The current admin page.
+	 */
+	public function enqueue_styles( $hook_suffix ) {
+		// No admin styles to enqueue yet.
+		// Example:
+		// wp_enqueue_style( $this->plugin_name, plugin_dir_url( __FILE__ ) . 'css/lha-animation-optimizer-admin.css', array(), $this->version, 'all' );
+	}
+
+	/**
+	 * Enqueue admin-specific JavaScript.
+	 *
+	 * This method is hooked to `admin_enqueue_scripts`.
+	 *
+	 * @since    1.0.1 // Assuming version increment for new feature
+	 * @param    string    $hook_suffix    The current admin page.
+	 */
+	public function enqueue_scripts( $hook_suffix ) {
+		// No admin scripts to enqueue yet.
+		// Example:
+		// wp_enqueue_script( $this->plugin_name, plugin_dir_url( __FILE__ ) . 'js/lha-animation-optimizer-admin.js', array( 'jquery' ), $this->version, false );
+	}
 }
 
 // This class is production-ready.

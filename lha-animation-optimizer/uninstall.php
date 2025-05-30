@@ -14,10 +14,12 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 	exit;
 }
 
-// TODO: Add code here to clean up plugin data:
-// * Delete options_
+// Delete plugin options.
+delete_option( 'lha-animation-optimizer_options' );
+
+// TODO: Add further code here to clean up other plugin data if necessary:
 // * Delete custom tables
 // * Delete other plugin-specific data
 
-// This file is production-ready for its current minimal scope (security check).
-// Actual uninstall logic needs to be implemented based on plugin features.
+// This file is production-ready for its current minimal scope (security check and option deletion).
+// Actual uninstall logic needs to be implemented based on plugin features if they expand.
