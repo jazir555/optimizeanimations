@@ -30,6 +30,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
+ * Current plugin version.
+ * Used for cache busting of scripts and styles.
+ */
+define( 'LHA_ANIMATION_OPTIMIZER_VERSION', '1.0.0' );
+
+/**
  * The core plugin class that is used to define internationalization,
  * admin-specific hooks, and public-facing site hooks.
  */

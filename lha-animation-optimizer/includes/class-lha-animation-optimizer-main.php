@@ -63,7 +63,7 @@ class Main {
 	public function __construct() {
 
 		$this->plugin_name = 'lha-animation-optimizer';
-		$this->version = '1.0.0'; // This should ideally be defined in one place, e.g. main plugin file.
+		$this->version = LHA_ANIMATION_OPTIMIZER_VERSION;
 
 		$this->load_dependencies();
 		$this->set_locale();
